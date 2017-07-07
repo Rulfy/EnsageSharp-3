@@ -41,6 +41,11 @@ namespace InvokerAnnihilation
         //============================================================
         private static Hero _globalTarget;
         //============================================================
+        private static bool IsOrbwalking => Menu.Item("orbwalk.Enable").GetValue<bool>();
+        private static bool IsQuickCastActive => Menu.Item("quickCast.Key").GetValue<KeyBind>().Active;
+        private static int OrbMinDist => Menu.Item("orbwalk.minDistance").GetValue<Slider>().Value;
+
+        private static Ability Eul;
         private enum SmartSphereEnum
         {
            Quas=0,Wex=1,Exort=2 
@@ -52,7 +57,7 @@ namespace InvokerAnnihilation
             Events.OnLoad += (sender, args) =>
             {
                 _myHero = ObjectManager.LocalHero;
-                if (_myHero.ClassID != ClassID.CDOTA_Unit_Hero_Invoker)
+                if (_myHero.ClassId != ClassId.CDOTA_Unit_Hero_Invoker)
                 {
                     return;
                 }
@@ -82,6 +87,34 @@ namespace InvokerAnnihilation
                 var alacrity = Abilities.FindAbility("invoker_alacrity");
                 var meteor = Abilities.FindAbility("invoker_chaos_meteor");
 
+                var list = new List<string>()
+                {
+                    ss.StoredName(),
+                    coldsnap.StoredName(),
+                    ghostwalk.StoredName(),
+                    icewall.StoredName(),
+                    tornado.StoredName(),
+                    blast.StoredName(),
+                    forgeSpirit.StoredName(),
+                    emp.StoredName(),
+                    alacrity.StoredName(),
+                    meteor.StoredName()
+                };
+                var dict = new Dictionary<string, bool>
+                {
+                    { list[0],false},
+                    { list[1],false},
+                    { list[2],false},
+                    { list[3],false},
+                    { list[4],false},
+                    { list[5],false},
+                    { list[6],true},
+                    { list[7],false},
+                    { list[8],true},
+                    { list[9],false},
+                };
+                Menu.Item("quickCast.Abilities").SetValue(new PriorityChanger(list,new AbilityToggler(dict),"kek"));
+                SpellInfo.Add("nothing", new SpellStruct());
                 SpellInfo.Add(ss.Name, new SpellStruct(e, e, e));
                 SpellInfo.Add(coldsnap.Name, new SpellStruct(q, q, q));
                 SpellInfo.Add(ghostwalk.Name, new SpellStruct(q, q, w));
@@ -93,6 +126,7 @@ namespace InvokerAnnihilation
                 SpellInfo.Add(alacrity.Name, new SpellStruct(w, w, e));
                 SpellInfo.Add(meteor.Name, new SpellStruct(e, e, w));
                 
+
                 Combos[_maxCombo] = new ComboStruct(new[] {ss, meteor, blast, coldsnap, forgeSpirit}, 5, true);
                 Combos[_maxCombo] =
                     new ComboStruct(new[] {tornado, ss, meteor, blast, tornado, coldsnap, alacrity, forgeSpirit},5);
@@ -110,7 +144,7 @@ namespace InvokerAnnihilation
 
                 Game.PrintMessage(
                     "<font face='Comic Sans MS, cursive'><font color='#00aaff'>" + Menu.DisplayName + " By Jumpering" +
-                    " loaded!</font> <font color='#aa0000'>v"  + Ver, MessageType.LogMessage);
+                    " loaded!</font> <font color='#aa0000'>v"  + Ver);
                 PrintSuccess(string.Format("> {1} Loaded v{0}", Ver, Menu.DisplayName));
 
                 Game.OnUpdate += Game_OnUpdate;
@@ -213,17 +247,32 @@ namespace InvokerAnnihilation
             };
             var settings = new Menu("Settings", "Settings");
             settings.AddItem(new MenuItem("items", "Items:").SetValue(new AbilityToggler(items)));
-            settings.AddItem(new MenuItem("moving", "Move To Enemy").SetValue(false).SetTooltip("while combing"));
+            //settings.AddItem(new MenuItem("moving", "Move To Enemy").SetValue(false).SetTooltip("while combing"));
+            
 
             var aInvis = new Menu("Auto Invis", "Auto Invis");
             aInvis.AddItem(new MenuItem("AutoInvis", "Enable").SetValue(false));
             aInvis.AddItem(new MenuItem("AutoInvis_enemy_check", "Check for any enemy in range").SetValue(true).SetTooltip("in 1000 range"));
-            
             aInvis.AddItem(new MenuItem("MinHealth_for_invis", "Min Health").SetValue(new Slider(15,0,100)));
 
+
+
+            var quickCast = new Menu("Quick Cast", "quickCast");
+            quickCast.AddItem(
+                new MenuItem("quickCast.Key", "Key").SetValue(new KeyBind(0, KeyBindType.Press)));
+            quickCast.AddItem(new MenuItem("quickCast.Abilities", "Abilities:").SetValue(new PriorityChanger()));
+            quickCast.AddItem(new MenuItem("quickCast.UseAlacrityOnlyOnForge", "Use alacrity only on forge spirit").SetValue(false));
+
+
+            var orbmenu = new Menu("Orbwalking", "Orbwalking");
+            orbmenu.AddItem(new MenuItem("orbwalk.Enable", "Enable Orbwalking").SetValue(true).SetTooltip("or just auto attacking"));
+            orbmenu.AddItem(new MenuItem("orbwalk.minDistance", "Min distance").SetValue(new Slider(100, 0, 700)));
+            orbmenu.AddItem(new MenuItem("orbwalkType", "OrbWalking: chase enemy").SetValue(true).SetTooltip("or your mouse"));
             combo.AddSubMenu(showComboMenuPos);
             //combo.AddSubMenu(showCurrentCombo);
             Menu.AddSubMenu(settings);
+            settings.AddSubMenu(orbmenu);
+            Menu.AddSubMenu(quickCast);
             Menu.AddSubMenu(aInvis);
             Menu.AddSubMenu(smart);
             Menu.AddSubMenu(sunStrikeSettings);
@@ -288,7 +337,7 @@ namespace InvokerAnnihilation
         private static void Player_OnExecuteAction(Player sender, ExecuteOrderEventArgs args)
         {
             if (!Menu.Item("smartIsActive").GetValue<bool>() || !Utils.SleepCheck("flee_mode")) return;
-            if (args.Order != Order.AttackTarget && args.Order != Order.MoveLocation && _inAction) return;
+            if (args.OrderId != OrderId.AttackTarget && args.OrderId != OrderId.MoveLocation && _inAction) return;
             var me = sender.Hero;
             Ability spell = null;
             switch (Menu.Item("OnAttacking").GetValue<StringList>().SelectedIndex)
@@ -303,7 +352,7 @@ namespace InvokerAnnihilation
                     spell = me.Spellbook.SpellE;
                     break;
             }
-            if (!me.IsAlive || args.Order != Order.AttackTarget || !(me.Distance2D(args.Target) <= 650)) return;
+            if (!me.IsAlive || args.OrderId != OrderId.AttackTarget || !(me.Distance2D(args.Target) <= 650)) return;
             if (spell == null || !spell.CanBeCasted()) return;
             spell.UseAbility();
             spell.UseAbility();
@@ -578,17 +627,17 @@ namespace InvokerAnnihilation
             {
                 var sizeY = 4 + i*(_size.Y + 2);
                 var eul = comboStruct.CheckEul();
-                var texturename = "materials/ensage_ui/items/cyclone.vmat";
+                var texturename = Textures.GetItemTexture("item_cyclone");
                 var selected = _combo == i;
                 Vector2 itemStartPos;
                 if (eul)
                 {
-                    itemStartPos = pos + new Vector2(10, sizeY);
                     
+                    itemStartPos = pos + new Vector2(10, sizeY);
                     Drawing.DrawRect(
                         itemStartPos,
                         new Vector2((float)(_size.X + _size.X * 0.16), _size.Y),
-                        Textures.GetTexture(texturename));
+                        texturename);
                     if (_stage == 1 && selected)
                         Drawing.DrawRect(
                             itemStartPos + new Vector2(1, 1),
@@ -605,37 +654,59 @@ namespace InvokerAnnihilation
                     try
                     {
                         var selectedSpell = comboStruct.GetComboAbilities()[j];
-                        texturename = $"materials/ensage_ui/spellicons/{selectedSpell.StoredName()}.vmat";
+                        var name = selectedSpell.StoredName();
+                        texturename = name.StartsWith("item_")
+                                        ? Textures.GetItemTexture(name)
+                                        : Textures.GetSpellTexture(name);
                         var sizeX = _size.X * (j + (eul?1:0)) + 10;
                         itemStartPos = pos + new Vector2(sizeX, sizeY);
                         Drawing.DrawRect(
                             itemStartPos,
-                            new Vector2(_size.X-6, _size.Y),
-                            Textures.GetTexture(texturename));
-                        if (selected && selectedSpell.AbilityState==AbilityState.OnCooldown)
+                            name.StartsWith("item_") ? new Vector2(_size.X, _size.Y) : new Vector2(_size.X - 6, _size.Y),
+                            texturename);
+                        if (name != "")
                         {
-                            var cd = selectedSpell.Cooldown;
-                            var cdL = selectedSpell.CooldownLength;
-                            Drawing.DrawRect(itemStartPos,
-                                new Vector2(_size.X - 6,
-                                    cd/
-                                    cdL*(_size.Y)),
-                                new Color(255, 255, 255, 100));
-                            Drawing.DrawText(((int) cd).ToString(CultureInfo.InvariantCulture),
-                                    itemStartPos,new Vector2(15,15), 
-                                    Color.Gold,FontFlags.AntiAlias | FontFlags.DropShadow);
-                            /*Drawing.DrawRect(
+                            try
+                            {
+                                if (selected && selectedSpell.AbilityState == AbilityState.OnCooldown)
+                                {
+                                    var cd = selectedSpell.Cooldown;
+                                    var cdL = selectedSpell.CooldownLength;
+                                    Drawing.DrawRect(itemStartPos,
+                                        new Vector2(_size.X - 6,
+                                            cd/
+                                            cdL*(_size.Y)),
+                                        new Color(255, 255, 255, 100));
+                                    Drawing.DrawText(((int) cd).ToString(CultureInfo.InvariantCulture),
+                                        itemStartPos, new Vector2(15, 15),
+                                        Color.Gold, FontFlags.AntiAlias | FontFlags.DropShadow);
+                                    /*Drawing.DrawRect(
                             itemStartPos,
                             new Vector2(_size.X-6, _size.Y),Color.Black);*/
+                                }
+                            }
+                            catch (Exception)
+                            {
+
+                            }
                         }
                         legal++;
-                        var tempStage = _stage<2?0:_stage-2;
-                        if (Equals(comboStruct.GetComboAbilities()[j], Combos[_combo].GetComboAbilities()[tempStage]) && selected && _stage>0)
+                        var tempStage = _stage < 2 ? 0 : _stage - 2;
+                        try
                         {
-                            Drawing.DrawRect(
-                                itemStartPos,
-                                new Vector2(_size.X - 3, _size.Y),
-                                Color.Red, true);
+                            if (
+                                Equals(comboStruct.GetComboAbilities()[j], Combos[_combo].GetComboAbilities()[tempStage]) &&
+                                selected && _stage > 0)
+                            {
+                                Drawing.DrawRect(
+                                    itemStartPos,
+                                    new Vector2(_size.X - 3, _size.Y),
+                                    Color.Red, true);
+                            }
+                        }
+                        catch
+                        {
+                            
                         }
                         if (comboStruct.IsCustom())
                         {
@@ -669,20 +740,26 @@ namespace InvokerAnnihilation
                                     Color.Orange,true);
 
                                 Drawing.DrawRect(
-                                    itemStartPos3 + new Vector2((-_size.X - 2)*10 - 2, -2),
-                                    new Vector2((_size.X - 2)*11, (_size.Y + 2) + 2),
+                                    itemStartPos3 + new Vector2((-_size.X - 2)*SpellInfo.Count+3,-2),
+                                    new Vector2((_size.X - 2)*(SpellInfo.Count + 1), (_size.Y + 2) + 2),
                                     Color.DarkOrange, true);
                                 foreach (var spell in SpellInfo)
                                 {
                                     kek++;
-                                    texturename = $"materials/ensage_ui/spellicons/{spell.Key}.vmat";
+                                    name = spell.Key;
+                                    texturename = name.StartsWith("item_")
+                                        ? Textures.GetItemTexture(name)
+                                        : Textures.GetSpellTexture(name);
+
                                     var sizeX2 = _size.X * kek + 10;
                                     //var sizeY2 = 4 + (i + kek)*(_size.Y + 2);
                                     var itemStartPos2 = pos + new Vector2(-sizeX2, sizeY);
                                     Drawing.DrawRect(
                                         itemStartPos2,
-                                        new Vector2(_size.X - 6, _size.Y),
-                                        Textures.GetTexture(texturename));
+                                        name.StartsWith("item_")
+                                            ? new Vector2(_size.X, _size.Y)
+                                            : new Vector2(_size.X - 6, _size.Y),
+                                        texturename);
                                     isIn = Utils.IsUnderRectangle(Game.MouseScreenPosition, itemStartPos2.X,
                                         itemStartPos2.Y, _size.X - 3,
                                         _size.Y);
@@ -702,8 +779,9 @@ namespace InvokerAnnihilation
                             }
                         }
                     }
-                    catch (Exception)
+                    catch (Exception e)
                     {
+                        Console.WriteLine(e);
                         //Print("I:" + i + " J: " + j + " stage-2:" + (_stage - 2));
                     }
                 }
@@ -729,6 +807,13 @@ namespace InvokerAnnihilation
             if (Game.IsPaused)
             {
                 return;
+            }
+
+            if (Eul == null || !Eul.IsValid)
+            {
+                Eul = me.FindItem("item_cyclone",true);
+                if (Eul != null && Eul.IsValid)
+                    SpellInfo.Add(Eul.Name,new SpellStruct());
             }
 
             if (Utils.SleepCheck("act") && !_inAction && Menu.Item("smartIsActive").GetValue<bool>())
@@ -787,7 +872,6 @@ namespace InvokerAnnihilation
                         Utils.Sleep(500, "flee_mode");
                     }
                 }
-
             }
 
             #endregion
@@ -799,6 +883,11 @@ namespace InvokerAnnihilation
 
             }
 
+            #endregion
+
+            #region QuickCast
+
+            DoQCast();
             #endregion
 
             #region Auto ss on stunned enemy
@@ -918,6 +1007,9 @@ namespace InvokerAnnihilation
 
             if (!_inAction)
             {
+                if (_globalTarget!=null && _globalTarget.IsValid)
+                    if (ComboSwitcher)
+                        _combo = _startComboPosition;
                 _globalTarget = null;
                 return;
             }
@@ -946,6 +1038,59 @@ namespace InvokerAnnihilation
                 ComboInAction(me, target);
             */
             #endregion
+        }
+
+        private static PriorityChanger QCast => Menu.Item("quickCast.Abilities").GetValue<PriorityChanger>();
+        private static bool AlOnForge => Menu.Item("quickCast.UseAlacrityOnlyOnForge").GetValue<bool>();
+        private static void DoQCast()
+        {
+            if (!IsQuickCastActive)
+                return;
+            if (!Utils.SleepCheck("stop qcast"))
+                return;
+            var spells = QCast.ItemList;
+            var viable =
+                spells.Where(
+                    x =>
+                        QCast.AbilityToggler.IsEnabled(x) && Utils.SleepCheck(x + "qcast") &&
+                        Abilities.FindAbility(x).Cooldown <= 0)
+                    .OrderByDescending(y => QCast.GetPriority(y));
+            var active1 = _myHero.Spellbook.Spell4;
+            var active2 = _myHero.Spellbook.Spell5;
+            foreach (var ability in viable.Select(Abilities.FindAbility))
+            {
+                if (active1.Equals(ability) || active2.Equals(ability))
+                {
+                    if (ability.StoredName() == "invoker_alacrity" && AlOnForge)
+                    {
+                        var forge = FindForge();
+                        if (forge != null)
+                            UseSpell(ability, FindForge(), _myHero, true);
+                    }
+                    else
+                        UseSpell(ability, ClosestToMouse(_myHero), _myHero);
+                    Utils.Sleep(250, ability.StoredName() + "qcast");
+                }
+                else
+                {
+                    InvokeNeededSpells(_myHero, ability);
+                    Utils.Sleep(250, "stop qcast");
+                }
+                return;
+            }
+
+            //InvokeNeededSpells;
+        }
+
+        private static Unit FindForge()
+        {
+            var forge =
+                ObjectManager.GetEntities<Unit>()
+                    .Where(
+                        x =>
+                            x.ClassId == ClassId.CDOTA_BaseNPC_Invoker_Forged_Spirit && x.IsAlive &&
+                            x.Team == _myHero.Team && x.Distance2D(_myHero)<=800);
+            return forge.FirstOrDefault();
         }
 
         private static void CastAutoInvis(Hero me)
@@ -986,6 +1131,8 @@ namespace InvokerAnnihilation
         {
             return !Menu.Item("ssAutoInStunned.KillSteal").GetValue<bool>() || x.Health <= damage;
         }
+
+        private static bool ChaseEnemyOrbwalking => Menu.Item("orbwalkType").GetValue<bool>();
 
         private static bool CheckForEnemy(Vector3 pos, List<Hero> validHeroes,Hero main)
         {
@@ -1044,10 +1191,15 @@ namespace InvokerAnnihilation
                    _myHero.Distance2D(x) <= Menu.Item("ssAutoInStunned.Range").GetValue<Slider>().Value;
         }
 
-        private static void InvokeNeededSpells(Hero me,Ability neededAbility=null)
+        private static void InvokeNeededSpells(Hero me, Ability neededAbility = null)
         {
             var spell1 = _spellForCast = neededAbility ?? Combos[_combo].GetComboAbilities()[0];
             var spell2 = _spellForCast = neededAbility ?? Combos[_combo].GetComboAbilities()[1];
+            if (spell1.StoredName().StartsWith("item_"))
+            {
+                spell1 = Combos[_combo].GetComboAbilities()[1];
+                spell2 = Combos[_combo].GetComboAbilities()[2];
+            }
             var active1 = me.Spellbook.Spell4;
             var active2 = me.Spellbook.Spell5;
             if ((Equals(spell1, active1) || Equals(spell1, active2)) && (Equals(spell2, active1) || Equals(spell2, active2)))
@@ -1075,6 +1227,9 @@ namespace InvokerAnnihilation
                 var invoke = Abilities.FindAbility("invoker_invoke");
                 if (!invoke.CanBeCasted()) return;
                 var spells = s.GetNeededAbilities();
+                var isNothing = spells.Count(x => x != null && x.IsValid)==0;
+                if (isNothing)
+                    return;
                 spells[0]?.UseAbility();
                 spells[1]?.UseAbility();
                 spells[2]?.UseAbility();
@@ -1083,6 +1238,7 @@ namespace InvokerAnnihilation
             }
         }
         private static readonly Dictionary<Unit,Orbwalker> OrbDictinary=new Dictionary<Unit, Orbwalker>();
+        private static int _startComboPosition;
         private static void ComboInAction(Hero me, Hero target)
         {
             #region Init
@@ -1125,6 +1281,8 @@ namespace InvokerAnnihilation
             {
                 _initNewCombo = true;
                 _stage = 1;
+                if (ComboSwitcher)
+                    _startComboPosition = _combo;
                 //PrintInfo("Starting new combo! " + $"[{_combo + 1}] target: {target.StoredName()}");
             }
             if (!Utils.SleepCheck("StageCheck")) return;
@@ -1230,8 +1388,8 @@ namespace InvokerAnnihilation
                         {
                             if (eul == null && ComboSwitcher)
                                 _combo = _combo == _maxCombo - 1 ? _combo = 0 : _combo + 1;
-                            if (!target.IsInvul())
-                                Orbwalking.Orbwalk(target, 10, followTarget: true);
+                            TryToAttack(target, me);
+                            
                             return;
                         }
                         if (me.Distance2D(target) <= eul.CastRange+50)
@@ -1254,8 +1412,8 @@ namespace InvokerAnnihilation
                 default:
                     if (Combos[_combo].GetComboAbilities().Length < _stage - 1 && !target.IsInvul())
                     {
-                        if (!target.IsInvul())
-                            Orbwalking.Orbwalk(target, 10, followTarget: true);
+                        TryToAttack(target, me);
+
                         _stage = 1;
                         if (ComboSwitcher)
                             _combo = _combo == _maxCombo - 1 ? _combo = 0 : _combo + 1;
@@ -1275,7 +1433,7 @@ namespace InvokerAnnihilation
                     }
                     if (nextSpell != null && nextSpell.AbilityState == AbilityState.Ready)
                     {
-                        if (Equals(nextSpell, icewall) || Menu.Item("moving").GetValue<bool>())
+                        if (Equals(nextSpell, icewall) /*|| Menu.Item("moving").GetValue<bool>()*/)
                         {
                             CastIceWall(me, target, false, icewall);
                         }
@@ -1312,10 +1470,7 @@ namespace InvokerAnnihilation
                                     }
                                     else
                                     {
-                                        if (!target.IsInvul())
-                                        {
-                                            Orbwalking.Orbwalk(target, followTarget: true);
-                                        }
+                                        TryToAttack(target, me);
                                     }
                                 }
                                 else
@@ -1338,7 +1493,8 @@ namespace InvokerAnnihilation
                     }
                     else if (!target.IsInvul())
                     {
-                        Orbwalking.Orbwalk(target, followTarget: true);
+                        TryToAttack(target, me);
+
                         return;
                     }
                     break;
@@ -1350,6 +1506,21 @@ namespace InvokerAnnihilation
             //Game.PrintMessage($"refreshPos {Combos[_combo].GetRefreshPos()} Combo: {_combo} Stage: {_stage}",MessageType.ChatMessage);
             refresher.UseAbility();
             _stage --;
+        }
+
+        private static void TryToAttack(Hero target,Hero me)
+        {
+            if (!target.IsInvul())
+                if (IsOrbwalking && target.Distance2D(me)>=OrbMinDist)
+                    Orbwalking.Orbwalk(target, 10, followTarget: ChaseEnemyOrbwalking);
+                else
+                {
+                    if (Utils.SleepCheck("attack_cd_autoattacking"))
+                    {
+                        me.Attack(target);
+                        Utils.Sleep(250, "attack_cd_autoattacking");
+                    }
+                }
         }
 
         private static void LetsTryCastSpell(Hero me, Hero target, Ability spellForCast, bool nextSpell=false)
@@ -1456,7 +1627,7 @@ namespace InvokerAnnihilation
                 }
                 else if (!target.IsInvul())
                 {
-                    Orbwalking.Orbwalk(target,0,0,false,true);
+                    TryToAttack(target,me);
                 }
             }
             else
@@ -1467,11 +1638,12 @@ namespace InvokerAnnihilation
             }
         }
 
-        private static void UseSpell(Ability spellForCast, Hero target,Hero me)
+        private static void UseSpell(Ability spellForCast, Unit target,Hero me,bool itsall=false)
         {
+            var targ = target?.Position ?? Game.MousePosition;
             if (spellForCast.IsAbilityBehavior(AbilityBehavior.Point))
             {
-                spellForCast.UseAbility(target.Position);
+                spellForCast.UseAbility(targ);
                 return;
             }
             if (spellForCast.IsAbilityBehavior(AbilityBehavior.NoTarget))
@@ -1480,13 +1652,14 @@ namespace InvokerAnnihilation
                 return;
             }
             if (!spellForCast.IsAbilityBehavior(AbilityBehavior.UnitTarget)) return;
-            if (spellForCast.TargetTeamType == TargetTeamType.Enemy || spellForCast.TargetTeamType == TargetTeamType.All)
+            if (spellForCast.TargetTeamType == TargetTeamType.Enemy || spellForCast.TargetTeamType == TargetTeamType.All || spellForCast.TargetTeamType == TargetTeamType.Custom)
             {
-                spellForCast.UseAbility(target);
+                if (target != null)
+                    spellForCast.UseAbility(target);
             }
             else
             {
-                spellForCast.UseAbility(me);
+                spellForCast.UseAbility(itsall?target:me);
             }
         }
 
@@ -1534,11 +1707,11 @@ namespace InvokerAnnihilation
 
         private static void Print(string s)
         {
-            Game.PrintMessage(s, MessageType.ChatMessage);
+            Game.PrintMessage(s);
         }
         private static string GPrint(this string s)
         {
-            Game.PrintMessage("[debug]: "+s, MessageType.ChatMessage);
+            Game.PrintMessage("[debug]: "+s);
             return s;
         }
 

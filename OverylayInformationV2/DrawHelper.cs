@@ -7,7 +7,6 @@ using Ensage.Common;
 using Ensage.Common.Extensions;
 using Ensage.Common.Menu;
 using Ensage.Common.Objects;
-using Ensage.Items;
 using SharpDX;
 using SharpDX.Direct3D9;
 
@@ -21,16 +20,135 @@ namespace OverlayInformation
         public static void Overlay(EventArgs args)
         {
             if (!Checker.IsActive()) return;
-            if (Members.Menu.Item("spellpanel.Enable").GetValue<bool>())
+            //Printer.Print($"x: {HudInfoNew.ScreenSizeX()}");
+            if (Members.Menu.Item("spellpanel.Enable").GetValue<bool>() && Members.Menu.Item("spellpanel.OldMethod.Enable").GetValue<bool>())
                 DrawSpellPanel(Members.Menu.Item("spellpanel.Targets").GetValue<StringList>().SelectedIndex);
             if (Members.Menu.Item("toppanel.Enable").GetValue<bool>())
                 DrawTopPanel(Members.Menu.Item("toppanel.Targets").GetValue<StringList>().SelectedIndex);
-            if (Members.Menu.Item("dangitems.Enable").GetValue<bool>())
-                DrawDangeItems();
+            /*if (Members.Menu.Item("dangitems.Enable").GetValue<bool>())
+                DrawDangeItems();*/
             if (Members.Menu.Item("lastPosition.Enable").GetValue<bool>())
                 DrawLastPosition();
             if (Members.Menu.Item("netWorth.Enable").GetValue<bool>())
                 DrawNetWorth();
+            if (Members.Menu.Item("netWorthBar.Enable").GetValue<bool>())
+                DrawNetWorthBar();
+        }
+
+        private static void DrawNetWorthBar()
+        {
+            var startPos = HudInfoNew.GetFakeTopPanelPosition(0, Team.Radiant) +
+                           new Vector2((float)HudInfoNew.GetTopPanelSizeX() * 5, (float)HudInfoNew.GetTopPanelSizeY());
+            var endPos = HudInfoNew.GetFakeTopPanelPosition(5, Team.Dire);
+            var size = new Vector2(endPos.X - startPos.X,
+                Members.Menu.Item("netWorthBar.Size").GetValue<Slider>().Value*Percent);
+            DrawNetWorthBarStageOne(startPos,size);
+            
+        }
+
+        private static bool IsDrawPercents => Members.Menu.Item("netWorthBar.Percents.Enable").GetValue<bool>();
+        private static bool IsDrawTeamWorth => Members.Menu.Item("netWorthBar.TeamWorth.Enable").GetValue<bool>();
+        private static float GetNetworthBarCoef => Members.Menu.Item("netWorthBar.coef").GetValue<Slider>().Value;
+
+        private static Color GetNetworthBarColorForRadiant
+            =>
+                new Color(
+                    Members.Menu.Item("netWorthBar.Radiant.Red").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Radiant.Green").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Radiant.Blue").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Radiant.Alpha").GetValue<Slider>().Value);
+        private static Color GetNetworthBarColorForDire
+            =>
+                new Color(
+                    Members.Menu.Item("netWorthBar.Dire.Red").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Dire.Green").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Dire.Blue").GetValue<Slider>().Value,
+                    Members.Menu.Item("netWorthBar.Dire.Alpha").GetValue<Slider>().Value);
+
+        private static void DrawNetWorthBarStageOne(Vector2 startPos, Vector2 size)
+        {
+            if (Members.ItemDictionary.Count == 0)
+            {
+                return;
+            }
+            long radiantNetworh = 0, direNetwoth = 0;
+            foreach (var v in Members.Heroes)
+            {
+                try
+                {
+                    long worth;
+                    if (!Members.NetWorthDictionary.TryGetValue(v.StoredName(), out worth))
+                    {
+                        continue;
+                    }
+                    /*var dividedWeStand = v.FindSpell("meepo_divided_we_stand") as DividedWeStand;
+                    if (dividedWeStand != null && (v.ClassID == ClassID.CDOTA_Unit_Hero_Meepo) && dividedWeStand.UnitIndex > 0)
+                    {
+                        continue;
+                    }*/
+                    if (Members.MeepoIgnoreList.Contains(v))
+                        continue;
+                    if (v.Team == Team.Radiant)
+                        radiantNetworh += worth;
+                    else
+                        direNetwoth += worth;
+                }
+                catch (Exception)
+                {
+                    Printer.Print("[NetWorthBar][findMaxNetWorth]: " + v.StoredName());
+                    continue;
+                }
+            }
+
+            var percent = 100 * radiantNetworh / Math.Max(1, radiantNetworh+direNetwoth);
+            var currentSize = size.X / 100 * percent;
+            var lineSize = new Vector2(currentSize, size.Y);
+            var endOfGreen = startPos + new Vector2(lineSize.X, 0);
+            //var color2 = worth == maxWorth ? Color.Yellow : Color.Black;
+            Color leftClr, rightClr;
+            if (Members.MyPlayer.Team != Team.Radiant)
+            {
+                rightClr = GetNetworthBarColorForRadiant;
+                leftClr = GetNetworthBarColorForDire;
+                percent = 100 - percent;
+            }
+            else
+            {
+                leftClr = GetNetworthBarColorForRadiant;
+                rightClr = GetNetworthBarColorForDire;
+            }
+            Drawing.DrawRect(startPos, lineSize, leftClr);
+            Drawing.DrawRect(endOfGreen, new Vector2(size.X - lineSize.X,lineSize.Y), rightClr);
+            Drawing.DrawRect(startPos, size, new Color(0, 0, 0, 255), true);
+            var text = $"{percent}%";
+            var textSize = Drawing.MeasureText(text, "Arial",
+                new Vector2((float)(size.Y * .95), size.Y / 2), FontFlags.AntiAlias);
+            var textPos = endOfGreen - new Vector2(textSize.X/2, /*lineSize.Y / 2 - textSize.Y / 2*/0);
+            var coef = GetNetworthBarCoef/10;
+            if (IsDrawPercents)
+                Drawing.DrawText(
+                    text,
+                    textPos,
+                    new Vector2(textSize.Y, 0),
+                    Color.White,
+                    FontFlags.AntiAlias | FontFlags.StrikeOut);
+            if (IsDrawTeamWorth)
+            {
+                text = $"{radiantNetworh}";
+                Drawing.DrawText(
+                    text,
+                    startPos + new Vector2(0, size.Y),
+                    new Vector2(textSize.Y/coef, 0),
+                    Color.White,
+                    FontFlags.AntiAlias | FontFlags.StrikeOut);
+                text = $"{direNetwoth}";
+                Drawing.DrawText(
+                    text,
+                    startPos + new Vector2(size.X - textSize.X/coef, size.Y),
+                    new Vector2(textSize.Y/coef, 0),
+                    Color.White,
+                    FontFlags.AntiAlias | FontFlags.StrikeOut);
+            }
         }
 
         private static void DrawNetWorth()
@@ -44,10 +162,10 @@ namespace OverlayInformation
             var g = Members.Menu.Item("netWorth.Green").GetValue<Slider>().Value;
             var b = Members.Menu.Item("netWorth.Blue").GetValue<Slider>().Value;
             Drawing.DrawRect(startPos, size + new Vector2(0, 34), new Color(r, g, b, 255), true);
-            DrawPlayer(startPos + new Vector2(2, 2), size, r, g, b);
+            DrawPlayer(startPos + new Vector2(2, 2), size);
 
         }
-        private static void DrawPlayer(Vector2 pos, Vector2 size, int r, int g, int b)
+        private static void DrawPlayer(Vector2 pos, Vector2 size)
         {
             var i = 0;
             if (Members.ItemDictionary.Count == 0)
@@ -55,17 +173,26 @@ namespace OverlayInformation
                 return;
             }
             long maxWorth = 0;
-            var PlayersWithWorth=new List<Hero>();
+            var playersWithWorth=new List<Hero>();
             foreach (var v in Members.Heroes)
             {
                 try
                 {
                     long worth;
                     if (!Members.NetWorthDictionary.TryGetValue(v.StoredName(), out worth))
+                    {
+                        continue;
+                    }
+                    /*var dividedWeStand = v.FindSpell("meepo_divided_we_stand") as DividedWeStand;
+                    if (dividedWeStand != null && (v.ClassID == ClassID.CDOTA_Unit_Hero_Meepo) && dividedWeStand.UnitIndex > 0)
+                    {
+                        continue;
+                    }*/
+                    if (Members.MeepoIgnoreList.Contains(v))
                         continue;
                     if (maxWorth < worth)
                         maxWorth = worth;
-                    PlayersWithWorth.Add(v);
+                    playersWithWorth.Add(v);
                 }
                 catch (Exception)
                 {
@@ -75,9 +202,9 @@ namespace OverlayInformation
             }
 
             if (Members.Menu.Item("netWorth.Order").GetValue<bool>())
-                PlayersWithWorth =
-                    new List<Hero>(PlayersWithWorth.OrderByDescending(x => Members.NetWorthDictionary[x.StoredName()]));
-            foreach (var v in PlayersWithWorth)
+                playersWithWorth =
+                    new List<Hero>(playersWithWorth.OrderByDescending(x => Members.NetWorthDictionary[x.StoredName()]));
+            foreach (var v in playersWithWorth)
             {
                 long worth;
                 try
@@ -120,6 +247,8 @@ namespace OverlayInformation
 
         private static void DrawLastPosition()
         {
+            //var particleAttachment = ParticleAttachment.OverheadFollow;
+           // new ParticleEffect(@"", target, ParticleAttachment.OverheadFollow);
             foreach (var hero in Members.EnemyHeroes.Where(x => x.IsAlive && !x.IsVisible))
             {
                 if (Members.Menu.Item("lastPosition.Enable.Minimap").GetValue<bool>())
@@ -171,49 +300,57 @@ namespace OverlayInformation
         {
             foreach (var hero in Manager.HeroManager.GetEnemyViableHeroes())
             {
-                if (Manager.HeroManager.GetItemList(hero)==null) continue;
-                var iPos = HUDInfo.GetHPbarPosition(hero);
-                var iSize = new Vector2(HUDInfo.GetHPBarSizeX(hero), HUDInfo.GetHpBarSizeY(hero));
-                float count = 0;
-                List<Item> items;
                 try
                 {
-                    if (!Members.ItemDictionary.TryGetValue(hero.Name, out items))
+                    if (Manager.HeroManager.GetItemList(hero) == null) continue;
+                    var iPos = HUDInfo.GetHPbarPosition(hero);
+                    var iSize = new Vector2(HUDInfo.GetHPBarSizeX(hero), HUDInfo.GetHpBarSizeY(hero));
+                    float count = 0;
+                    List<Item> items;
+                    try
+                    {
+                        if (!Members.ItemDictionary.TryGetValue(hero.Handle, out items))
+                            continue;
+                    }
+                    catch (Exception)
+                    {
+                        Printer.Print("[DrawDangeItems]: " + hero.StoredName());
                         continue;
-                }
-                catch (Exception)
-                {
-                    Printer.Print("[DrawDangeItems]: " + hero.StoredName());
-                    continue;
-                }
-                foreach (
-                    var item in
-                        items
-                            .Where(x => x!=null && x.IsValid && Members.Menu.Item("dangitems.List").GetValue<AbilityToggler>().IsEnabled(x.Name))
-                    )
-                {
-                    var itemname = $"materials/ensage_ui/items/{item.Name.Replace("item_", "")}.vmat";
-                    Drawing.DrawRect(iPos + new Vector2(count, 50),
-                        new Vector2(iSize.X / 3, (float)(iSize.Y * 2.5)),
-                        Textures.GetTexture(itemname));
-                    if (item.AbilityState == AbilityState.OnCooldown)
-                    {
-                        var cd = ((int)item.Cooldown).ToString(CultureInfo.InvariantCulture);
-                        Drawing.DrawText(cd, iPos + new Vector2(count, 40), Color.White,
-                            FontFlags.AntiAlias | FontFlags.DropShadow);
                     }
-                    if (item.AbilityState == AbilityState.NotEnoughMana)
+                    foreach (
+                        var item in
+                            items
+                                .Where(x => x != null && x.IsValid && Members.Menu.Item("dangitems.List").GetValue<AbilityToggler>().IsEnabled(x.Name))
+                        )
                     {
+                        var itemname = $"materials/ensage_ui/items/{item.Name.Replace("item_", "")}.vmat";
                         Drawing.DrawRect(iPos + new Vector2(count, 50),
-                            new Vector2(iSize.X / 4, (float)(iSize.Y * 2.5)), new Color(0, 0, 200, 100));
+                            new Vector2(iSize.X / 3, (float)(iSize.Y * 2.5)),
+                            Textures.GetTexture(itemname));
+                        if (item.AbilityState == AbilityState.OnCooldown)
+                        {
+                            var cd = ((int)item.Cooldown).ToString(CultureInfo.InvariantCulture);
+                            Drawing.DrawText(cd, iPos + new Vector2(count, 40), Color.White,
+                                FontFlags.AntiAlias | FontFlags.DropShadow);
+                        }
+                        if (item.AbilityState == AbilityState.NotEnoughMana)
+                        {
+                            Drawing.DrawRect(iPos + new Vector2(count, 50),
+                                new Vector2(iSize.X / 4, (float)(iSize.Y * 2.5)), new Color(0, 0, 200, 100));
+                        }
+                        count += iSize.X / 4;
                     }
-                    count += iSize.X / 4;
                 }
+                catch (Exception e)
+                {
+                    Printer.Print($"[DrawDangeItems]: all --> {e.StackTrace}");
+                }
+                
             }
         }
 
-        private static readonly Dictionary<string,Ability> Ultimate=new Dictionary<string, Ability>();
-
+        private static readonly Dictionary<string, Ability> Ultimate = new Dictionary<string, Ability>();
+        private static readonly Dictionary<uint, float> LastTimeDictionary = new Dictionary<uint, float>();
         private static void DrawTopPanel(int type)
         {
             List<Hero> selectedHeroes = null;
@@ -236,16 +373,25 @@ namespace OverlayInformation
             {
                 foreach (var v in selectedHeroes)
                 {
-                    var pos = Helper.GetTopPanelPosition(v) +
-                              new Vector2(Members.Menu.Item("extraPos.X").GetValue<Slider>().Value,
-                                  Members.Menu.Item("extraPos.Y").GetValue<Slider>().Value);
-                    var temp = HUDInfo.GetTopPanelSize(v);
-                    var size = new Vector2((float) temp[0], (float) temp[1]);
-                    var healthDelta = new Vector2(v.Health*size.X/v.MaximumHealth, 0);
-                    var manaDelta = new Vector2(v.Mana*size.X/v.MaximumMana, 0);
-                    DrawHealthPanel(pos, size, healthDelta);
-                    DrawManaPanel(pos, size, manaDelta);
-                    DrawStatus(pos,v, size);
+                    try
+                    {
+                        var pos = Helper.GetTopPanelPosition(v) +
+                                  new Vector2(Members.Menu.Item("extraPos.X").GetValue<Slider>().Value,
+                                      Members.Menu.Item("extraPos.Y").GetValue<Slider>().Value);
+                        var temp = HudInfoNew.GetTopPanelSize(v);
+                        //var temp = HUDInfo.GetTopPanelSize(v);
+                        var size = new Vector2((float)temp[0], (float)temp[1]);
+                        var healthDelta = new Vector2(v.Health * size.X / v.MaximumHealth, 0);
+                        var manaDelta = new Vector2(v.Mana * size.X / v.MaximumMana, 0);
+                        DrawHealthPanel(pos, size, healthDelta);
+                        DrawManaPanel(pos, size, manaDelta);
+                        DrawStatus(pos, v, size);
+                    }
+                    catch (Exception)
+                    {
+                        Printer.Print($"[DrawTopPanel: selectedHeroes] --> {v!=null && v.IsValid}");
+                    }
+                    
                 }
             }
             if (!Members.Menu.Item("ultimate.Enable").GetValue<bool>()) return;
@@ -270,10 +416,27 @@ namespace OverlayInformation
                         continue;
                     }
                     if (ultimate == null || !ultimate.IsValid || ultimate.Level <= 0) continue;
+                    float lastTime;
+                    if (v.IsVisible)
+                    {
+                        if (!LastTimeDictionary.TryGetValue(v.Handle, out lastTime))
+                        {
+                            LastTimeDictionary.Add(v.Handle, Game.RawGameTime);
+                        }
+                        else
+                        {
+                            LastTimeDictionary[v.Handle] = Game.RawGameTime;
+                        }
+                    }
+                    else
+                    {
+                        LastTimeDictionary.TryGetValue(v.Handle, out lastTime);
+                    }
                     var pos = Helper.GetTopPanelPosition(v) +
                               new Vector2(Members.Menu.Item("extraPos.X").GetValue<Slider>().Value,
                                   Members.Menu.Item("extraPos.Y").GetValue<Slider>().Value);
-                    var tempS = HUDInfo.GetTopPanelSize(v);
+                    var tempS = HudInfoNew.GetTopPanelSize(v);
+                    //var tempS = HUDInfo.GetTopPanelSize(v);
                     var size = new Vector2((float) tempS[0], (float) tempS[1]);
                     var ultPos = pos + new Vector2(size[0]/2 - 5, size[1] + 1);
                     string path;
@@ -292,14 +455,19 @@ namespace OverlayInformation
                     }
                     if (Members.Menu.Item("ultimate.Icon.Enable").GetValue<bool>())
                         Drawing.DrawRect(ultPos, new Vector2(14, 14), Drawing.GetTexture(path));
-                    if (Members.Menu.Item("ultimate.Type").GetValue<StringList>().SelectedIndex == 0 && Members.Menu.Item("ultimate.Info").GetValue<bool>() &&
+                    var cooldown = v.IsVisible ? ultimate.Cooldown : ultimate.Cooldown - Game.RawGameTime + lastTime;
+                    cooldown = Math.Max(0, cooldown);
+                    if (Members.Menu.Item("ultimate.Type").GetValue<StringList>().SelectedIndex == 0 &&
+                        Members.Menu.Item("ultimate.Info").GetValue<bool>() &&
                         (Members.Menu.Item("ultimate.InfoAlways").GetValue<bool>() && (
                             ultimate.AbilityState == AbilityState.OnCooldown ||
                             ultimate.AbilityState == AbilityState.NotEnoughMana) ||
                          Utils.IsUnderRectangle(Game.MouseScreenPosition, ultPos.X, ultPos.Y, 15, 15)))
                     {
                         var texturename = $"materials/ensage_ui/spellicons/{ultimate.StoredName()}.vmat";
-                        pos = Helper.GetTopPanelPosition(v);
+                        pos = Helper.GetTopPanelPosition(v) +
+                              new Vector2(Members.Menu.Item("extraPos.X").GetValue<Slider>().Value,
+                                  Members.Menu.Item("extraPos.Y").GetValue<Slider>().Value);
                         var startPos = pos + new Vector2(0, 7*4 + size.Y);
                         size = new Vector2(size.X, size.Y + 15);
                         Drawing.DrawRect(startPos,
@@ -308,11 +476,12 @@ namespace OverlayInformation
                         string ultimateCd;
                         Vector2 textSize;
                         Vector2 textPos;
+
                         switch (ultimate.AbilityState)
                         {
                             case AbilityState.OnCooldown:
                                 ultimateCd =
-                                    ((int) Math.Min(ultimate.Cooldown, 999)).ToString(CultureInfo.InvariantCulture);
+                                    ((int) Math.Min(cooldown, 999)).ToString(CultureInfo.InvariantCulture);
                                 textSize = Drawing.MeasureText(ultimateCd, "Arial",
                                     new Vector2((float) (size.Y*.50), size.Y/2), FontFlags.AntiAlias);
                                 //Print(v.Name + " cd: " + ultimateCd);
@@ -326,13 +495,14 @@ namespace OverlayInformation
                                     new Vector2(textSize.Y, 0),
                                     Color.White,
                                     FontFlags.AntiAlias | FontFlags.StrikeOut);
-                                if (Members.Menu.Item("ultimate.Icon.Extra.Enable").GetValue<bool>() && ultimate.ManaCost > v.Mana)
+                                if (Members.Menu.Item("ultimate.Icon.Extra.Enable").GetValue<bool>() &&
+                                    ultimate.ManaCost > v.Mana)
                                 {
                                     ultimateCd =
-                                    ((int)Math.Min(Math.Abs(v.Mana - ultimate.ManaCost), 999)).ToString(
-                                        CultureInfo.InvariantCulture);
+                                        ((int) Math.Min(Math.Abs(v.Mana - ultimate.ManaCost), 999)).ToString(
+                                            CultureInfo.InvariantCulture);
                                     textSize = Drawing.MeasureText(ultimateCd, "Arial",
-                                        new Vector2((float)(size.Y * .50), size.Y / 2), FontFlags.AntiAlias);
+                                        new Vector2((float) (size.Y*.50), size.Y/2), FontFlags.AntiAlias);
                                     textPos = startPos + new Vector2(size.X - textSize.X, 0);
                                     Drawing.DrawRect(textPos - new Vector2(0, 0),
                                         new Vector2(textSize.X, textSize.Y),
@@ -370,14 +540,17 @@ namespace OverlayInformation
                                 break;
                         }
                     }
-                    else if (ultimate.AbilityState==AbilityState.OnCooldown)
+                    else if (ultimate.AbilityState == AbilityState.OnCooldown)
                     {
-                        pos = Helper.GetTopPanelPosition(v);
-                        var startPos = pos + new Vector2(0, 7 * 4 + size.Y);
-                        var cd = ultimate.Cooldown;
-                        var manaDelta = new Vector2(cd * size.X / ultimate.CooldownLength, 0);
+                        pos = Helper.GetTopPanelPosition(v) +
+                              new Vector2(Members.Menu.Item("extraPos.X").GetValue<Slider>().Value,
+                                  Members.Menu.Item("extraPos.Y").GetValue<Slider>().Value);
+                        var startPos = pos + new Vector2(0, 7*4 + size.Y);
+                        var cd = cooldown;
+                        var manaDelta = new Vector2(cd*size.X/ultimate.CooldownLength, 0);
                         //size = new Vector2(manaDelta.X, 7);
-                        DrawUltimatePanel(startPos, size, manaDelta, (int)cd, Members.Menu.Item("ultimate.Line.Size").GetValue<Slider>().Value);
+                        DrawUltimatePanel(startPos, size, manaDelta, (int) cd,
+                            Members.Menu.Item("ultimate.Line.Size").GetValue<Slider>().Value);
                         /*Drawing.DrawRect(startPos,
                             size, Color.Yellow);*/
                     }
@@ -427,6 +600,8 @@ namespace OverlayInformation
             }
 
         }
+        public static bool IsEnable
+            => true/*Members.Menu.Item("toppanel.AllyVision.Type").GetValue<StringList>().SelectedIndex == 1*/;
         private static void DrawStatus(Vector2 pos, Hero hero, Vector2 size, int height = 7)
         {
             if (!Members.Menu.Item("toppanel.Status.Enable").GetValue<bool>()) return;
@@ -438,7 +613,7 @@ namespace OverlayInformation
             }
             if (info.Ally)
             {
-                if (!hero.IsVisibleToEnemies || !Members.Menu.Item("toppanel.AllyVision.Enable").GetValue<bool>()) return;
+                if (!hero.IsVisibleToEnemies || !Members.Menu.Item("toppanel.AllyVision.Enable").GetValue<bool>() || !IsEnable) return;
                 var newpos = pos + new Vector2(0, size.Y + height*2);
                 Drawing.DrawRect(newpos, new Vector2(size.X, height*2), new Color(0, 0, 0, 100));
                 Drawing.DrawRect(newpos, new Vector2(size.X, height*2), Color.Black, true);
@@ -643,6 +818,12 @@ namespace OverlayInformation
                 }
                 DrawShadowText(Members.RoshIsAlive ? "Roshan alive" : Members.DeathTime == 0 ? "Roshan death" : text, 217, 10,
                     Members.RoshIsAlive ? Color.Green : Color.Red, Members.RoshanFont);
+
+                if (Members.AegisEvent)
+                {
+                    text = $"Aegis Timer: {4 - Members.AegisMinutes}:{59 - Members.AegisSeconds:0.}";
+                    DrawShadowText(text, 217, 27,Color.GreenYellow, Members.RoshanFont);
+                }
 
                 #endregion
             }

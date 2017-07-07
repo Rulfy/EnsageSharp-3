@@ -1,11 +1,22 @@
 using System;
 using Ensage;
+using SharpDX;
 
 namespace OverlayInformation
 {
     internal static class Printer
     {
         #region Helpers
+
+        public static string PrintVector(this Vector3 vec)
+        {
+            return $"({vec.X};{vec.Y};{vec.Z})";
+        }
+        public static string PrintVector(this Vector2 vec)
+        {
+            return $"({vec.X};{vec.Y})";
+        }
+
         public static void PrintInfo(string text, params object[] arguments)
         {
             PrintEncolored(text, ConsoleColor.White, arguments); ;
@@ -29,10 +40,10 @@ namespace OverlayInformation
             Console.ForegroundColor = clr;
         }
 
-        public static void Print(string str, bool print = false, MessageType type = MessageType.ChatMessage)
+        public static void Print(string str, bool print = false)
         {
             if (print || Members.Menu.Item("Dev.Text.enable").GetValue<bool>())
-                Game.PrintMessage(str, type);
+                Game.PrintMessage(str);
         }
         #endregion
     }

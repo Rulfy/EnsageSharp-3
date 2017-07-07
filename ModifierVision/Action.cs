@@ -11,6 +11,13 @@ namespace ModifierVision
     internal class Action
     {
         private static bool Checker => Members.Menu.Item("Enable").GetValue<bool>();
+        private static bool ChangeColor => Members.Menu.Item("Enable.Color").GetValue<bool>();
+
+        private static bool DrawRoundIcon
+            => Members.Menu.Item("Enable.IconType").GetValue<StringList>().SelectedIndex == 0;
+
+        private static bool DrawVerticallyIcon
+            => Members.Menu.Item("Enable.IconPosition").GetValue<StringList>().SelectedIndex == 0;
 
         public static void OnDraw(EventArgs args)
         {
@@ -49,20 +56,39 @@ namespace ModifierVision
                                    Members.Menu.Item("ExtraPos.Y").GetValue<Slider>().Value);
                 var size = new Vector2(Members.Menu.Item("Settings.IconSize").GetValue<Slider>().Value,
                     Members.Menu.Item("Settings.IconSize").GetValue<Slider>().Value);
-                foreach (var modifier in modList.Where(x=>x!=null && x.IsValid))
+                foreach (var modifier in modList.Where(x=>x!=null && x.IsValid && !Members.BlackList.Contains(x.Name)))
                 {
                     if (counter >= maxCounter)
                         continue;
                     var remTime = modifier.RemainingTime;
+                    
                     /*if (remTime<=1)
                         continue;*/
-                    var itemPos = startPos + new Vector2(-2 + size.X*counter, 2);
-                    Drawing.DrawRect(itemPos, size,
-                        Textures.GetTexture($"materials/ensage_ui/modifier_textures/{modifier.TextureName}.vmat"));
-                    Drawing.DrawRect(itemPos, size,
-                        Color.Black,true);
-                    var cooldown = Math.Min(remTime+0.1, 99).ToString("0.0");
-                    var textSize = Drawing.MeasureText(cooldown, "Arial",
+                    var itemPos = startPos;
+                    if (DrawVerticallyIcon)
+                    {
+                        itemPos += new Vector2(2, -2 + size.X * counter);
+                    }
+                    else
+                    {
+                        itemPos += new Vector2(-2 + size.X * counter, 2);
+                    }
+                    if (DrawRoundIcon)
+                    {
+                        Drawing.DrawRect(itemPos, size,
+                            Textures.GetTexture(
+                                $"materials/ensage_ui/modifier_textures/Round/{modifier.TextureName}.vmat"));
+                    }
+                    else
+                    {
+                        Drawing.DrawRect(itemPos, size,
+                            Textures.GetTexture(
+                                $"materials/ensage_ui/modifier_textures/{modifier.TextureName}.vmat"));
+                        Drawing.DrawRect(itemPos, size,
+                            Color.Black, true);
+                    }
+                    var timer = Math.Min(remTime+0.1, 99).ToString("0.0");
+                    var textSize = Drawing.MeasureText(timer, "Arial",
                         new Vector2(
                             (float) (size.Y*Members.Menu.Item("Settings.TextSize").GetValue<Slider>().Value/100),
                             size.Y/2), FontFlags.AntiAlias);
@@ -70,12 +96,27 @@ namespace ModifierVision
                     Drawing.DrawRect(textPos - new Vector2(0, 0),
                         new Vector2(textSize.X, textSize.Y),
                         new Color(0, 0, 0, 200));
+                    var clr = remTime >= 1 ? Color.White : ChangeColor ? Color.Red : Color.White;
                     Drawing.DrawText(
-                        cooldown,
+                        timer,
                         textPos,
                         new Vector2(textSize.Y, 0),
-                        Color.White,
+                        clr,
                         FontFlags.AntiAlias | FontFlags.StrikeOut);
+                    if (Members.Menu.Item("Enable.Stacks").GetValue<bool>())
+                    {
+                        var stacks = modifier.StackCount;
+                        if (stacks > 0)
+                        {
+                            textPos = itemPos;
+                            Drawing.DrawText(
+                                stacks.ToString(),
+                                textPos,
+                                new Vector2(textSize.Y, 0),
+                                Color.White,
+                                FontFlags.AntiAlias | FontFlags.StrikeOut);
+                        }
+                    }
                     counter++;
                 }
             }
@@ -112,14 +153,32 @@ namespace ModifierVision
             if (sender == null || !sender.IsValid || args.Modifier == null || !args.Modifier.IsValid)
                 return;
             var modifier = args.Modifier;
-            if (modifier.RemainingTime<=1)
+            if (Members.BlackList.Contains(modifier.Name))
                 return;
+            if (modifier.RemainingTime<=1 && !Members.WhiteList.Contains(modifier.Name)) 
+                return;
+            /*var name = modifier.Name.Substring(9);
+            if (Members.Menu.Item("abilityToggle.!").GetValue<AbilityToggler>().Dictionary.ContainsKey(name))
+            {
+                if (!Members.Menu.Item("abilityToggle.!").GetValue<AbilityToggler>().IsEnabled(name))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                Members.Menu.Item("abilityToggle.!").GetValue<AbilityToggler>().Add(name);
+                if (!Members.Menu.Item("abilityToggle.!").GetValue<AbilityToggler>().IsEnabled(name))
+                {
+                    return;
+                }
+            }*/
             if (sender is Hero)
             {
                 if (Members.Menu.Item("Enable.Heroes").GetValue<bool>())
                 {
                     var a = AddToSystem(sender, modifier);
-                    Printer.Print($"[Add]Hero: {sender.Name}" + a + $" -->{modifier.Name}");
+                    Printer.Print($"[Add]Hero: {sender.Name} [{a}] --> {modifier.Name}");
                 }
             }
             else if (Members.Menu.Item("Enable.Creeps").GetValue<bool>())

@@ -1,0 +1,51 @@
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe.config
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.pdb
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\Ensage.Common.dll
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\Ensage.dll
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\SharpDX.Direct3D9.dll
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\SharpDX.dll
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.dll
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\Ensage.Common.pdb
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.pdb
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.csprojResolveAssemblyReference.cache
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.exe
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.pdb
+C:\Users\Jumbo\Documents\Visual Studio 2013\Projects\InvokerAnnihilation - копия\InvokerAnnihilation\bin\Debug\Newtonsoft.Json.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe.config
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.pdb
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.Common.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.Direct3D9.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Newtonsoft.Json.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.dll
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.Common.pdb
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.pdb
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.csprojResolveAssemblyReference.cache
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.exe
+C:\Users\Jumpering\Documents\Visual Studio 2015\Projects\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe.config
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.exe
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\InvokerAnnihilation.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.Common.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.Direct3D9.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Newtonsoft.Json.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.Common.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\EnsageSharp.Sandbox.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.csprojResolveAssemblyReference.cache
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.exe
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\obj\x64\Debug\InvokerAnnihilation.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\clipper_library.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.SDK.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\PlaySharp.Toolkit.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.Direct2D1.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.Direct3D11.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.DXGI.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\SharpDX.Mathematics.dll
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\clipper_library.pdb
+E:\Ensage\EnsageSharp\EnsageSharp\InvTest\InvokerAnnihilation\InvokerAnnihilation\bin\Debug\Ensage.SDK.pdb

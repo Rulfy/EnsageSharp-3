@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Ensage;
-using Ensage.Common.Objects;
 
 namespace OverlayInformation
 {
@@ -24,7 +23,7 @@ namespace OverlayInformation
                 catch (Exception e)
                 {
                     Printer.Print("[GetViableHeroes]: " + e);
-                    return null;
+                    return new List<Hero>();
                 }
                 
             }
@@ -38,7 +37,7 @@ namespace OverlayInformation
                 catch (Exception e)
                 {
                     Printer.Print("[GetAllyViableHeroes]: " + e);
-                    return null;
+                    return new List<Hero>();
                 }
             }
 
@@ -51,32 +50,20 @@ namespace OverlayInformation
                 catch (Exception e)
                 {
                     Printer.Print("[GetEnemyViableHeroes]: " + e);
-                    return null;
+                    return new List<Hero>();
                 }
             }
 
             public static List<Item> GetItemList(Hero h)
             {
                 List<Item> list;
-                return Members.ItemDictionary.TryGetValue(h.StoredName(), out list) ? list : null;
+                return Members.ItemDictionary.TryGetValue(h.Handle, out list) ? list : new List<Item>();
             }
 
             public static List<Ability> GetAbilityList(Hero h)
             {
                 List<Ability> list;
-                return Members.AbilityDictionary.TryGetValue(h.StoredName(), out list) ? list : null;
-            }
-
-            public static List<Item> GetItemList(string s)
-            {
-                List<Item> list;
-                return Members.ItemDictionary.TryGetValue(s, out list) ? list : null;
-            }
-
-            public static List<Ability> GetAbilityList(string s)
-            {
-                List<Ability> list;
-                return Members.AbilityDictionary.TryGetValue(s, out list) ? list : null;
+                return Members.AbilityDictionary.TryGetValue(h.Handle, out list) ? list : new List<Ability>();
             }
         }
         internal static class PlayerManager
@@ -103,6 +90,21 @@ namespace OverlayInformation
             public static List<Unit> GetBaseList()
             {
                 return Members.BaseList;
+            }
+            public static List<Courier> GetCouriersList()
+            {
+                return Members.CourList;
+            }
+            public static List<Courier> GetViableCouriersList()
+            {
+                try
+                {
+                    return Members.CourList.Where(x => x != null && x.IsValid && x.IsAlive && x.IsVisible).ToList();
+                }
+                catch (Exception)
+                {
+                    return new List<Courier>();
+                }
             }
         }
     }

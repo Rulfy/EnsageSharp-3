@@ -9,7 +9,10 @@ using Ensage.Common.Extensions;
 using Ensage.Common.Extensions.Damage;
 using Ensage.Common.Menu;
 using Ensage.Common.Objects;
+using Ensage.Common.Objects.UtilityObjects;
 using Ensage.Heroes;
+using log4net;
+using PlaySharp.Toolkit.Logging;
 using SharpDX;
 
 namespace MeepoAnnihilation
@@ -38,13 +41,13 @@ namespace MeepoAnnihilation
             {new Vector3(-4400, -3900, 384), "middle"}
 
         };
-
+        private static readonly ILog Log = AssemblyLogs.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private static Hero MyHero { get; set; }
         private static Player MyPlayer { get; set; }
         private static Hero _globalTarget;
-        private static Item blink, meka, aghainim, hex, orchid, eb;
-        private static Ability ultimate;
-        private static List<Meepo> MeepoList = new List<Meepo>();
+        private static Item _blink, _meka, _aghainim, _hex, _orchid, _eb;
+        private static Ability _ultimate;
+        private static List<Meepo> _meepoList = new List<Meepo>();
         public static readonly Dictionary<uint, OrderState> OrderStates = new Dictionary<uint, OrderState>();
         public static readonly Dictionary<uint, OrderState> LastOrderStates = new Dictionary<uint, OrderState>();
         private static readonly Dictionary<uint, ParticleEffect> Effects = new Dictionary<uint, ParticleEffect>();
@@ -61,21 +64,74 @@ namespace MeepoAnnihilation
 
 
 
-        private static readonly Vector2 IconPos = new Vector2(120, 71);
+        private static Vector2 IconPos
+            => new Vector2(Menu.Item("Drawing.posX").GetValue<Slider>().Value, Menu.Item("Drawing.posY").GetValue<Slider>().Value);
 
-        private const int IconSize = 82;
+        private static int IconSize => Menu.Item("Drawing.Size").GetValue<Slider>().Value;
         private static readonly bool[] MenuIsOpen = new bool[10];
-        private static int SelectedId;
-        private static List<Entity> SelectedMeepo = new List<Entity>();
+        private static int _selectedId;
+        private static List<Entity> _selectedMeepo = new List<Entity>();
         public static readonly Dictionary<uint, Ability> SpellQ = new Dictionary<uint, Ability>();
         public static readonly Dictionary<uint, Ability> SpellW = new Dictionary<uint, Ability>();
-
+        private static bool ThrowingNet => Menu.Item("hotkey.ThrowNet").GetValue<KeyBind>().Active;
+        private static bool isNetEnable = false;
         #endregion
 
         #region Main
 
+        private static bool _firstTime = true;
         private static void Main()
         {
+            Events.OnLoad += (sender, args) =>
+            {
+                InitMenu();
+                MyHero = ObjectManager.LocalHero;
+                if (MyHero.ClassId!=ClassId.CDOTA_Unit_Hero_Meepo) return;
+                Game.PrintMessage(
+                    "<font face='Comic Sans MS, cursive'><font color='#00aaff'>" + Menu.DisplayName + " By Jumpering" +
+                    " loaded!</font> <font color='#aa0000'>v" + Assembly.GetExecutingAssembly().GetName().Version);
+                Game.OnUpdate += Game_OnUpdate;
+                Game.OnUpdate += Camp_update;
+                Drawing.OnDraw += Drawing_OnDraw;
+                Game.OnWndProc += Game_OnWndProc;
+                Player.OnExecuteOrder += Player_OnExecuteAction;
+                Orbwalking.Load();
+                _meepoList.Clear();
+                _aghainim = null;
+                _blink = null;
+                _meka = null;
+                _ultimate = null;
+                JungleCamps.Init();
+                foreach (var camp in JungleCamps.GetCamps)
+                {
+                    camp.CanBeHere = true;
+                }
+                _selectedMeepo.Clear();
+                _meepoList.Clear();
+                MeepoSet.Clear();
+                ScaleX = Drawing.Width / 1920f;
+                ScaleY = Drawing.Height / 1080f;
+            };
+            Events.OnClose += (sender, args) =>
+            {
+                Game.OnUpdate -= Game_OnUpdate;
+                Game.OnUpdate -= Camp_update;
+                Drawing.OnDraw -= Drawing_OnDraw;
+                Game.OnWndProc -= Game_OnWndProc;
+                Player.OnExecuteOrder -= Player_OnExecuteAction;
+                MyHero = null;
+            };
+        }
+
+        public static float ScaleY { get; set; }
+
+        public static float ScaleX { get; set; }
+
+        public static void InitMenu()
+        {
+            if (!_firstTime)
+                return;
+            _firstTime = false;
             Menu.AddItem(new MenuItem("Enable", "Enable").SetValue(true));
             Menu.AddItem(new MenuItem("hotkey", "Hotkey").SetValue(new KeyBind('G', KeyBindType.Press)));
             Menu.AddItem(
@@ -84,17 +140,40 @@ namespace MeepoAnnihilation
             Menu.AddItem(
                 new MenuItem("hotkey.Escape", "Escape for selected Meepo(s)").SetValue(new KeyBind('V',
                     KeyBindType.Press)));
+            Menu.AddItem(
+                new MenuItem("hotkey.ThrowNet", "Throw net").SetValue(new KeyBind('D',
+                    KeyBindType.Press))).ValueChanged += (sender, args) =>
+                    {
+                        var newValue = args.GetNewValue<KeyBind>().Active;
+                        var oldValue = args.GetOldValue<KeyBind>().Active;
+                        if (oldValue != newValue)
+                            isNetEnable = newValue;
+                    };
             Menu.AddItem(new MenuItem("Escape.MinRange", "Min health for autoheal").SetValue(new Slider(300, 0, 4000)));
             Menu.AddItem(
                 new MenuItem("Escape.MinRangePercent", "Min health for autoheal (%)").SetValue(new Slider(15, 0, 100)));
-            Menu.AddItem(new MenuItem("Drawing.PoffSystem", "Poofer").SetValue(true).SetTooltip("All selected meepos will use W spell on himself when first meepo use W spell"));
-            var countDraw = new Menu("Drawing", "Drawing");
-            
-            countDraw.AddItem(new MenuItem("Drawing.DamageFromPoof", "Draw Poof count on enemy").SetValue(true));
-            countDraw.AddItem(new MenuItem("Drawing.NumOfMeepo", "Draw Number for each meepo").SetValue(true));
-            countDraw.AddItem(new MenuItem("Drawing.NumOfMeepoOnMinimap", "Draw Number for each meepo on minimap").SetValue(true));
-            countDraw.AddItem(new MenuItem("Drawing.NumOfMeepoInMenu", "Draw Number for each meepo in OverlayMenu").SetValue(true));
-            
+            Menu.AddItem(
+                new MenuItem("Drawing.PoffSystem", "Poofer").SetValue(true)
+                    .SetTooltip("All selected meepos will use W spell on target position when first meepo use W spell"));
+            var drawingMenu = new Menu("Drawing", "Drawing");
+
+            drawingMenu.AddItem(new MenuItem("Drawing.DamageFromPoof", "Draw Poof count on enemy").SetValue(true));
+            drawingMenu.AddItem(new MenuItem("Drawing.NumOfMeepo", "Draw Number for each meepo").SetValue(true));
+            drawingMenu.AddItem(
+                new MenuItem("Drawing.NumOfMeepoOnMinimap", "Draw Number for each meepo on minimap").SetValue(true));
+            drawingMenu.AddItem(
+                new MenuItem("Drawing.NumOfMeepoInMenu", "Draw Number for each meepo in OverlayMenu").SetValue(true));
+            drawingMenu.AddItem(
+                new MenuItem("Drawing.posX", "OverlayMenu pos X").SetValue(new Slider(120, 0,
+                    500)));
+            drawingMenu.AddItem(
+                new MenuItem("Drawing.posY", "OverlayMenu pos Y").SetValue(new Slider(137, 0,
+                    500)));
+            drawingMenu.AddItem(
+                new MenuItem("Drawing.Size", "OverlayMenu size").SetValue(new Slider(75, 0,
+                    500)));
+            drawingMenu.AddItem(new MenuItem("Drawing.PoofState", "Draw poof state in OverlayMenu").SetValue(true));
+
             var autoPush = new Menu("Auto Push", "AutoPush");
             autoPush.AddItem(
                 new MenuItem("AutoPush.Enable", "Push Lane By Selected Meepo(s)").SetValue(new KeyBind('Z',
@@ -135,52 +214,9 @@ namespace MeepoAnnihilation
             Menu.AddSubMenu(autoPush);
             Menu.AddSubMenu(jumgleFarm);
             Menu.AddSubMenu(jungleStack);
-            Menu.AddSubMenu(countDraw);
+            Menu.AddSubMenu(drawingMenu);
             Menu.AddToMainMenu();
-
-            Events.OnLoad += (sender, args) =>
-            {
-                MyHero = ObjectManager.LocalHero;
-                if (MyHero.ClassID!=ClassID.CDOTA_Unit_Hero_Meepo) return;
-                Game.PrintMessage(
-                    "<font face='Comic Sans MS, cursive'><font color='#00aaff'>" + Menu.DisplayName + " By Jumpering" +
-                    " loaded!</font> <font color='#aa0000'>v" + Assembly.GetExecutingAssembly().GetName().Version,
-                    MessageType.LogMessage);
-                Game.OnUpdate += Game_OnUpdate;
-                Game.OnUpdate += Camp_update;
-                Drawing.OnDraw += Drawing_OnDraw;
-                Game.OnWndProc += Game_OnWndProc;
-                Player.OnExecuteOrder += Player_OnExecuteAction;
-                Orbwalking.Load();
-                MeepoList.Clear();
-                aghainim = null;
-                blink = null;
-                meka = null;
-                ultimate = null;
-                foreach (var camp in JungleCamps.GetCamps)
-                {
-                    camp.canBeHere = true;
-                }
-                SelectedMeepo.Clear();
-                MeepoList.Clear();
-                MeepoSet.Clear();
-                ScaleX = Drawing.Width / 1920f;
-                ScaleY = Drawing.Height / 1080f;
-            };
-            Events.OnClose += (sender, args) =>
-            {
-                Game.OnUpdate -= Game_OnUpdate;
-                Game.OnUpdate -= Camp_update;
-                Drawing.OnDraw -= Drawing_OnDraw;
-                Game.OnWndProc -= Game_OnWndProc;
-                Player.OnExecuteOrder -= Player_OnExecuteAction;
-                MyHero = null;
-            };
         }
-
-        public static float ScaleY { get; set; }
-
-        public static float ScaleX { get; set; }
 
         #endregion
 
@@ -189,29 +225,38 @@ namespace MeepoAnnihilation
         private static void Player_OnExecuteAction(Player sender, ExecuteOrderEventArgs args)
         {
             if (!Menu.Item("Enable").GetValue<bool>()) return;
+            if (!args.IsPlayerInput)
+                return;
             if (MyHero == null || !MyHero.IsValid || !MyHero.IsAlive) return;
             var me = sender.Selection.First();
-            if (args.Order == Order.MoveLocation)
+            var order = args.OrderId;
+            if (order == OrderId.Hold || order == OrderId.MoveLocation)
             {
-
-                var me2 = MeepoSet.Find(x => x.Handle == me.Handle);
-
-                if (me2 != null)
+                foreach (
+                    var me2 in
+                        args.Entities.Select(entity => MeepoSet.Find(x => x.Handle == entity.Handle))
+                            .Where(me2 => me2 != null)
+                            .Where(me2 => me2.CurrentOrderState != OrderState.Escape))
                 {
-                    if (me2.CurrentOrderState != OrderState.Escape) OrderStates[me2.Handle] = OrderState.Idle;
+                    OrderStates[me2.Handle] = OrderState.Idle;
                 }
             }
             else if (Menu.Item("Drawing.PoffSystem").GetValue<bool>() &&
-                     (args.Order == Order.AbilityLocation || args.Order == Order.AbilityTarget) &&
-                     args.Ability.StoredName() == SpellW[MyHero.Handle].Name)
+                (args.OrderId == OrderId.AbilityLocation || args.OrderId == OrderId.AbilityTarget) &&
+                args.Ability.StoredName() == SpellW[MyHero.Handle].Name)
             {
-                foreach (var meepo in SelectedMeepo.Where(x => !Equals(x, me)))
+                var pos = args.TargetPosition;
+                foreach (var meepo in _selectedMeepo.Where(x => !Equals(x, me)))
                 {
                     var handle = meepo.Handle;
                     var spell = SpellW[handle];
+                    if (spell == null)
+                    {
+                        continue;
+                    }
                     if (spell.CanBeCasted())
                     {
-                        spell.UseAbility(meepo.Position);
+                        spell.UseAbility(pos);
                     }
                 }
             }
@@ -244,94 +289,133 @@ namespace MeepoAnnihilation
                 Textures.GetTexture(s));*/
             if (!Menu.Item("Enable").GetValue<bool>()) return;
 
-            if (Menu.Item("Drawing.DamageFromPoof").GetValue<bool>() && SpellW[MyHero.Handle] != null)
+            try
             {
-                var poof = SpellW[MyHero.Handle];
-                foreach (var hero in Heroes.GetByTeam(MyHero.GetEnemyTeam()).Where(x=>x.IsValid && x.IsAlive && x.IsVisible))
+                if (Menu.Item("Drawing.DamageFromPoof").GetValue<bool>() && SpellW[MyHero.Handle] != null)
                 {
-                    var w2SPos = HUDInfo.GetHPbarPosition(hero);
-                    if (w2SPos.X > 0 && w2SPos.Y > 0)
+                    var poof = SpellW[MyHero.Handle];
+                    foreach (
+                        var hero in
+                            Heroes.GetByTeam(MyHero.GetEnemyTeam()).Where(x => x.IsValid && x.IsAlive && x.IsVisible))
                     {
-                        var sizeX = HUDInfo.GetHPBarSizeX();
-                        var sizeY = HUDInfo.GetHpBarSizeY();
-                        var handle = hero.Handle;
-                        var damagePerPoof = Calculations.DamageTaken(hero,
-                            poof.GetDamage(poof.Level), DamageType.Magical, MyHero);
-                        var minCounter = (int) (hero.Health/damagePerPoof);
-                        var count = ((minCounter == int.MinValue) ? "Invul" : minCounter.ToString());
-                        var textSize = Drawing.MeasureText(count, "Arial",
-                            new Vector2((float) (sizeY*1.5), 500), FontFlags.AntiAlias);
-                        var textPos = w2SPos - new Vector2(textSize.X + 5, (float) ((sizeY*1.5) - (textSize.Y)));
-                        Drawing.DrawText(
-                            count,
-                            textPos,
-                            new Vector2((float) (sizeY*1.5), 100),
-                            Color.White,
-                            FontFlags.AntiAlias | FontFlags.StrikeOut);
-                        var texturename = string.Format("materials/ensage_ui/spellicons/{0}.vmat", poof.StoredName());
-                        var iconPos = textPos - new Vector2(sizeY*2 + 5, 0);
-                        Drawing.DrawRect(
-                            iconPos,
-                            new Vector2(sizeY*2, sizeY*2),
-                            Textures.GetTexture(texturename));
+                        var w2SPos = HUDInfo.GetHPbarPosition(hero);
+                        if (w2SPos.X > 0 && w2SPos.Y > 0)
+                        {
+                            var sizeX = HUDInfo.GetHPBarSizeX();
+                            var sizeY = HUDInfo.GetHpBarSizeY();
+                            var handle = hero.Handle;
+                            var damagePerPoof = Calculations.DamageTaken(hero,
+                                poof.GetDamage(poof.Level), DamageType.Magical, MyHero);
+                            var minCounter = (int) (hero.Health/damagePerPoof);
+                            var count = ((minCounter == int.MinValue) ? "Invul" : minCounter.ToString());
+                            var textSize = Drawing.MeasureText(count, "Arial",
+                                new Vector2((float) (sizeY*1.5), 500), FontFlags.AntiAlias);
+                            var textPos = w2SPos - new Vector2(textSize.X + 5, (float) ((sizeY*1.5) - (textSize.Y)));
+                            Drawing.DrawText(
+                                count,
+                                textPos,
+                                new Vector2((float) (sizeY*1.5), 100),
+                                Color.White,
+                                FontFlags.AntiAlias | FontFlags.StrikeOut);
+                            var texturename = $"materials/ensage_ui/spellicons/{poof.StoredName()}.vmat";
+                            var iconPos = textPos - new Vector2(sizeY*2 + 5, 0);
+                            Drawing.DrawRect(
+                                iconPos,
+                                new Vector2(sizeY*2, sizeY*2),
+                                Textures.GetTexture(texturename));
+                        }
                     }
                 }
+            }
+            catch
+            {
+                // ignored
             }
 
             if (true)
             {
-                var count = MeepoList.Count;
-                foreach (var meepo in MeepoList)
+                foreach (var meepo in MeepoSet/*.OrderBy(x=>x.Id)*/)
                 {
                     var handle = meepo.Handle;
                     /*Drawing.DrawRect(IconPos + new Vector2(0, IconSize)*count++, new Vector2(20, 50),
                         new Color(0, 155, 255, 155));
-                    Drawing.DrawText(OrderStates[handle].ToString(), IconPos + new Vector2(5, IconSize) * (count-1), new Vector2(20, 5), Color.Red, FontFlags.AntiAlias | FontFlags.Additive | FontFlags.Custom);*/
-                    count--;
+                    Drawing.DrawText(OrderStates[handle].ToString(), IconPos + new Vector2(5, IconSize) * (count-1), 
+                    new Vector2(20, 5), Color.Red, FontFlags.AntiAlias | FontFlags.Additive | FontFlags.Custom);*/
+                    
                     if (Menu.Item("Drawing.NumOfMeepoInMenu").GetValue<bool>())
                     {
                         var sizeY = HUDInfo.GetHpBarSizeY();
-                        var pos = IconPos + new Vector2(0, IconSize)*count;
-                        var textSize = Drawing.MeasureText((count+1).ToString(CultureInfo.InvariantCulture), "Arial",
+                        var pos = IconPos + new Vector2(0, IconSize)* meepo.Id;
+                        var textSize = Drawing.MeasureText((meepo.Id+1).ToString(CultureInfo.InvariantCulture), "Arial",
                             new Vector2((float) (sizeY*3), 100), FontFlags.AntiAlias);
                         var textPos = pos - new Vector2(sizeY / 2 + textSize.Y, 0);
                         Drawing.DrawText(
-                            (count+1).ToString(CultureInfo.InvariantCulture),
+                            (meepo.Id+1).ToString(CultureInfo.InvariantCulture),
                             textPos - new Vector2(72, 0),
                             new Vector2((float) (sizeY*3), 100),
                             Color.White,
                             FontFlags.AntiAlias | FontFlags.StrikeOut);
                     }
-                    DrawButton(IconPos + new Vector2(0, IconSize)*count, 70, 30, ref MenuIsOpen[count],
+                    DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id, 70, 30, ref MenuIsOpen[meepo.Id],
                         new Color(0, 155, 255, 150), new Color(0, 0, 0, 100), OrderStates[handle].ToString(),
-                        SelectedMeepo.Contains(meepo));
-                    if (MenuIsOpen[count])
+                        _selectedMeepo.Contains(meepo.Hero));
+                    if (Menu.Item("Drawing.PoofState").GetValue<bool>())
                     {
-                        SelectedId = 0;
-                        DrawButton(IconPos + new Vector2(0, IconSize)*count + new Vector2(70, 0), 70, 30, ref SelectedId,
+                        var w = meepo.SpellW;
+                        if (w.IsInAbilityPhase)
+                        {
+                            var delta = (float) ((Game.RawGameTime - meepo.PoofStartTime)*70/1.5);
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize) * meepo.Id), new Vector2(delta, 10),
+                                Color.White);
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize) * meepo.Id), new Vector2(70, 10),
+                                new Color(0,0,0,100));
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize) * meepo.Id), new Vector2(70, 10),
+                                Color.Black, true);
+                        }
+                        else
+                        {
+                            var state = w.AbilityState;
+                            var clr = state == AbilityState.NotEnoughMana
+                                ? new Color(0, 155, 255, 120)
+                                : state == AbilityState.Ready
+                                    ? new Color(0, 0, 0, 0)
+                                    : new Color(255, 50, 50, 120);
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize)*meepo.Id), new Vector2(20, 20),
+                                Textures.GetSpellTexture(w.StoredName()));
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize)*meepo.Id), new Vector2(20, 20),
+                                clr);
+                            Drawing.DrawRect(IconPos + new Vector2(0, 32 + (IconSize)*meepo.Id), new Vector2(20, 20),
+                                Color.Black, true);
+
+                        }
+                    }
+                    if (MenuIsOpen[meepo.Id])
+                    {
+                        _selectedId = 0;
+                        DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id + new Vector2(70, 0), 70, 30, ref _selectedId,
                             1,
                             new Color(0, 0, 0, 100),
                             OrderState.Idle.ToString());
-                        DrawButton(IconPos + new Vector2(0, IconSize)*count + new Vector2(70, 30), 70, 30,
-                            ref SelectedId, 2,
+                        DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id + new Vector2(70, 30), 70, 30,
+                            ref _selectedId, 2,
                             new Color(0, 0, 0, 100),
                             OrderState.Jungle.ToString());
-                        DrawButton(IconPos + new Vector2(0, IconSize)*count + new Vector2(140, 0), 70, 30,
-                            ref SelectedId, 3,
+                        DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id + new Vector2(140, 0), 70, 30,
+                            ref _selectedId, 3,
                             new Color(0, 0, 0, 100),
                             OrderState.Stacking.ToString());
-                        DrawButton(IconPos + new Vector2(0, IconSize)*count + new Vector2(140, 30), 70, 30,
-                            ref SelectedId, 4,
+                        DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id + new Vector2(140, 30), 70, 30,
+                            ref _selectedId, 4,
                             new Color(0, 0, 0, 100),
                             OrderState.Laning.ToString());
-                        DrawButton(IconPos + new Vector2(0, IconSize)*count + new Vector2(71 + 70/2, 60), 70, 30,
-                            ref SelectedId, 5,
+                        DrawButton(IconPos + new Vector2(0, IconSize)* meepo.Id + new Vector2(71 + 70/2, 60), 70, 30,
+                            ref _selectedId, 5,
                             new Color(0, 0, 0, 100),
                             OrderState.Escape.ToString());
-                        if (SelectedId != 0)
+                        if (_selectedId != 0)
                         {
-                            OrderStates[handle] = (OrderState) SelectedId - 1;
-                            MenuIsOpen[count] = false;
+                            OrderStates[handle] = (OrderState) _selectedId - 1;
+                            MenuIsOpen[meepo.Id] = false;
                             if (OrderStates[handle] == OrderState.Escape)
                             {
                                 NeedHeal[handle] = true;
@@ -340,12 +424,12 @@ namespace MeepoAnnihilation
                     }
                     if (Menu.Item("Drawing.NumOfMeepo").GetValue<bool>())
                     {
-                        var w2SPos = HUDInfo.GetHPbarPosition(meepo);
+                        var w2SPos = HUDInfo.GetHPbarPosition(meepo.Hero);
                         if (w2SPos.X > 0 && w2SPos.Y > 0)
                         {
                             var sizeX = HUDInfo.GetHPBarSizeX();
                             var sizeY = HUDInfo.GetHpBarSizeY();
-                            var text = count + 1;
+                            var text = meepo.Id+1;
                             var textSize = Drawing.MeasureText(text.ToString(CultureInfo.InvariantCulture), "Arial",
                                 new Vector2((float)(sizeY * 3), 100), FontFlags.AntiAlias);
                             var textPos = w2SPos + new Vector2(sizeY / 2 + textSize.Y, 0);
@@ -359,9 +443,9 @@ namespace MeepoAnnihilation
                     }
                     if (Menu.Item("Drawing.NumOfMeepoOnMinimap").GetValue<bool>())
                     {
-                        var w2SPos = WorldToMinimap(meepo.NetworkPosition);
+                        var w2SPos = meepo.Hero.Position.WorldToMinimap();//WorldToMinimap(meepo.NetworkPosition);
                         var sizeY = HUDInfo.GetHpBarSizeY();
-                        var text = count + 1;
+                        var text = meepo.Id+1;
                         Drawing.DrawText(
                             text.ToString(CultureInfo.InvariantCulture),
                             w2SPos + new Vector2(-5, -33),
@@ -376,7 +460,6 @@ namespace MeepoAnnihilation
         private static void Game_OnUpdate(EventArgs args)
         {
             if (!Menu.Item("Enable").GetValue<bool>()) return;
-
             if (MyHero == null || !MyHero.IsValid)
             {
                 MyHero = ObjectManager.LocalHero;
@@ -393,40 +476,40 @@ namespace MeepoAnnihilation
                 return;
             }
 
-            if (aghainim == null || !aghainim.IsValid)
+            if (_aghainim == null || !_aghainim.IsValid)
             {
-                aghainim = MyHero.FindItem("item_ultimate_scepter");
-                if (aghainim != null) Print("[Informer]: aghainim was found");
+                _aghainim = MyHero.FindItem("item_ultimate_scepter");
+                if (_aghainim != null) Print("[Informer]: aghainim was found");
             }
-            if (blink == null || !blink.IsValid)
+            if (_blink == null || !_blink.IsValid)
             {
-                blink = MyHero.FindItem("item_blink");
-                if (blink != null) Print("[Informer]: blink was found");
+                _blink = MyHero.FindItem("item_blink");
+                if (_blink != null) Print("[Informer]: blink was found");
             }
-            if (meka == null || !meka.IsValid)
+            if (_meka == null || !_meka.IsValid)
             {
-                meka = MyHero.FindItem("item_mekansm");
-                if (meka != null) Print("[Informer]: mekansm was found");
+                _meka = MyHero.FindItem("item_mekansm");
+                if (_meka != null) Print("[Informer]: mekansm was found");
             }
-            if (eb == null || !eb.IsValid)
+            if (_eb == null || !_eb.IsValid)
             {
-                eb = MyHero.FindItem("item_ethereal_blade");
-                if (eb != null) Print("[Informer]: ethereal_blade was found");
+                _eb = MyHero.FindItem("item_ethereal_blade");
+                if (_eb != null) Print("[Informer]: ethereal_blade was found");
             }
-            if (hex == null || !hex.IsValid)
+            if (_hex == null || !_hex.IsValid)
             {
-                hex = MyHero.FindItem("item_sheepstick");
-                if (hex != null) Print("[Informer]: hex was found");
+                _hex = MyHero.FindItem("item_sheepstick");
+                if (_hex != null) Print("[Informer]: hex was found");
             }
-            if (orchid == null || !orchid.IsValid)
+            if (_orchid == null || !_orchid.IsValid)
             {
-                orchid = MyHero.FindItem("item_orchid");
-                if (orchid != null) Print("[Informer]: orchid was found");
+                _orchid = MyHero.FindItem("item_orchid");
+                if (_orchid != null) Print("[Informer]: orchid was found");
             }
-            if (ultimate == null || !ultimate.IsValid)
+            if (_ultimate == null || !_ultimate.IsValid)
             {
-                ultimate = MyHero.Spellbook.Spell4;
-                if (ultimate != null) Print("[Informer]: ultimate was found");
+                _ultimate = MyHero.Spellbook.Spell4;
+                if (_ultimate != null) Print("[Informer]: ultimate was found");
             }
             /*if (travelBoots == null || !travelBoots.IsValid)
             {
@@ -437,7 +520,7 @@ namespace MeepoAnnihilation
             if (MyHero == null || !MyHero.IsValid || !MyHero.IsAlive) return;
             if (Menu.Item("AutoPush.Enable").GetValue<KeyBind>().Active && Utils.SleepCheck("button_cd"))
             {
-                foreach (var handle in SelectedMeepo.Select(x => x.Handle))
+                foreach (var handle in _selectedMeepo.Select(x => x.Handle))
                 {
                     if (OrderStates[handle] == OrderState.Laning)
                         OrderStates[handle] = OrderState.Idle;
@@ -448,7 +531,7 @@ namespace MeepoAnnihilation
             }
             if (Menu.Item("JungleFarm.Enable").GetValue<KeyBind>().Active && Utils.SleepCheck("button_cd"))
             {
-                foreach (var handle in SelectedMeepo.Select(x => x.Handle))
+                foreach (var handle in _selectedMeepo.Select(x => x.Handle))
                 {
                     if (OrderStates[handle] == OrderState.Jungle)
                         OrderStates[handle] = OrderState.Idle;
@@ -459,15 +542,15 @@ namespace MeepoAnnihilation
             }
             if (Menu.Item("JungleStack.Enable").GetValue<KeyBind>().Active && Utils.SleepCheck("button_cd"))
             {
-                foreach (var me in SelectedMeepo)
+                foreach (var me in _selectedMeepo)
                 {
                     var handle = me.Handle;
                     if (OrderStates[handle] == OrderState.Stacking)
                     {
-                        var s = JungleCamps.GetCamps.Find(x => Equals(x.stacking, me));
+                        var s = JungleCamps.GetCamps.Find(x => Equals(x.Stacking, me));
                         if (s != null)
                         {
-                            s.stacking = null;
+                            s.Stacking = null;
                         }
                         OrderStates[handle] = OrderState.Idle;
                     }
@@ -479,12 +562,24 @@ namespace MeepoAnnihilation
             RefreshMeepoList();
             foreach (var meepo in MeepoSet)
             {
+                var w = meepo.SpellW;
+                if (w.IsInAbilityPhase)
+                {
+                    if (meepo.PoofStartTime == float.MaxValue)
+                    {
+                        meepo.PoofStartTime = Game.RawGameTime;
+                    }
+                }
+                else if (meepo.PoofStartTime != float.MaxValue)
+                {
+                    meepo.PoofStartTime = float.MaxValue;
+                }
                 SafeTp(meepo.Hero, meepo.SpellW);
             }
 
             if (Menu.Item("hotkey.Escape").GetValue<KeyBind>().Active && Utils.SleepCheck("button_cd"))
             {
-                foreach (var handle in SelectedMeepo.Select(me => me.Handle))
+                foreach (var handle in _selectedMeepo.Select(me => me.Handle))
                 {
                     if (OrderStates[handle] == OrderState.Escape)
                         OrderStates[handle] = OrderState.Idle;
@@ -496,6 +591,7 @@ namespace MeepoAnnihilation
                 }
                 Utils.Sleep(250, "button_cd");
             }
+
             if (Menu.Item("hotkey.PoofAll").GetValue<KeyBind>().Active)
             {
                 foreach (
@@ -503,16 +599,42 @@ namespace MeepoAnnihilation
                         MeepoSet.Where(
                             x =>
                                 x.Hero.IsAlive && x.CurrentOrderState != OrderState.Escape &&
-                                !Equals(SelectedMeepo.FirstOrDefault(), x.Hero)))
+                                !Equals(_selectedMeepo.FirstOrDefault(), x.Hero)))
                 {
                     var handle = me.Handle;
                     var spell = me.SpellW;
                     if (spell != null && spell.CanBeCasted() && Utils.SleepCheck("all_poof" + handle))
                     {
-                        spell.UseAbility((Unit) SelectedMeepo.First());
+                        spell.UseAbility((Unit) _selectedMeepo.First());
                         Utils.Sleep(250, "all_poof" + handle);
                     }
 
+                }
+            }
+
+            if (ThrowingNet && isNetEnable)
+            {
+                //var target = TargetSelector.ClosestToMouse(MyHero);
+                var target = Game.MousePosition;
+                if (true)
+                {
+                    foreach (
+                        var me in
+                            MeepoSet.Where(
+                                x =>
+                                    x.Hero.IsAlive && x.CurrentOrderState != OrderState.Escape && x.Hero.Distance2D(target)<=x.SpellQ.GetCastRange())
+                                .OrderBy(y => y.Hero.Distance2D(target)))
+                    {
+                        var spell = me.SpellQ;
+                        var handle = me.Handle;
+                        if (spell != null && spell.CanBeCasted() && Utils.SleepCheck("throwNet"+handle))
+                        {
+                            spell.UseAbility(target);
+                            isNetEnable = false;
+                            Utils.Sleep(1000, "throwNet"+handle);
+                            return;
+                        }
+                    }
                 }
             }
             if (!Menu.Item("hotkey").GetValue<KeyBind>().Active || (_globalTarget != null && !_globalTarget.IsAlive))
@@ -538,7 +660,7 @@ namespace MeepoAnnihilation
 
         private static void DoCombo(Hero target)
         {
-            var theClosestMeepo = MeepoList.OrderBy(target.Distance2D).First();
+            var theClosestMeepo = _meepoList.OrderBy(target.Distance2D).First();
             var dist = theClosestMeepo.Distance2D(target)+MyHero.HullRadius+target.HullRadius;
             var targetPos = target.Position;
 
@@ -546,33 +668,33 @@ namespace MeepoAnnihilation
 
             if (OrderStates[MyHero.Handle] != OrderState.Escape)
             {
-                if (blink != null && blink.CanBeCasted() && dist <= 1150 && dist >= 250 && Utils.SleepCheck("Blink"))
+                if (_blink != null && _blink.CanBeCasted() && dist <= 1150 && dist >= 250 && Utils.SleepCheck("Blink"))
                 {
-                    blink.UseAbility(targetPos);
+                    _blink.UseAbility(targetPos);
                     Utils.Sleep(250, "Blink");
                 }
                 var bkb = target.FindItem("item_black_king_bar");
-                if (bkb != null && bkb.CanBeCasted() && hex != null && hex.CanBeCasted(target) &&
+                if (bkb != null && bkb.CanBeCasted() && _hex != null && _hex.CanBeCasted(target) &&
                     Utils.SleepCheck("hex"))
                 {
-                    hex.UseAbility(target);
+                    _hex.UseAbility(target);
                     Utils.Sleep(250, "hex");
                 }
-                if (orchid != null && orchid.CanBeCasted(target) && !target.IsHexed() && Utils.SleepCheck("orchid") &&
+                if (_orchid != null && _orchid.CanBeCasted(target) && !target.IsHexed() && Utils.SleepCheck("orchid") &&
                     Utils.SleepCheck("hex"))
                 {
-                    orchid.UseAbility(target);
+                    _orchid.UseAbility(target);
                     Utils.Sleep(250, "orchid");
                 }
-                if (hex != null && hex.CanBeCasted(target) && !target.IsSilenced() && Utils.SleepCheck("hex") &&
+                if (_hex != null && _hex.CanBeCasted(target) && !target.IsSilenced() && Utils.SleepCheck("hex") &&
                     Utils.SleepCheck("orchid"))
                 {
-                    hex.UseAbility(target);
+                    _hex.UseAbility(target);
                     Utils.Sleep(250, "hex");
                 }
-                if (eb != null && eb.CanBeCasted(target) && Utils.SleepCheck("eb"))
+                if (_eb != null && _eb.CanBeCasted(target) && Utils.SleepCheck("eb"))
                 {
-                    eb.UseAbility(target);
+                    _eb.UseAbility(target);
                     Utils.Sleep(250, "eb");
                 }
             }
@@ -581,12 +703,12 @@ namespace MeepoAnnihilation
 
             foreach (
                 var handle in
-                    MeepoList.Where(x => x.IsAlive && OrderStates[x.Handle] != OrderState.Escape)
+                    _meepoList.Where(x => x.IsAlive && OrderStates[x.Handle] != OrderState.Escape)
                         .Select(meepo => meepo.Handle))
             {
                 OrderStates[handle] = OrderState.InCombo;
             }
-            foreach (var meepo in MeepoList.Where(x => x.IsAlive && OrderStates[x.Handle] == OrderState.InCombo).OrderBy(y=>y.Distance2D(target)))
+            foreach (var meepo in _meepoList.Where(x => x.IsAlive && OrderStates[x.Handle] == OrderState.InCombo).OrderBy(y=>y.Distance2D(target)))
             {
                 #region gettings spells and drawing effects
 
@@ -609,9 +731,9 @@ namespace MeepoAnnihilation
                 #region CastQ
 
                 var mod = target.FindModifier("modifier_meepo_earthbind");
-                var remTime = mod != null ? mod.RemainingTime : 0;
+                var remTime = mod?.RemainingTime ?? 0;
 
-                if (q != null && q.CanBeCasted() && dist <= q.CastRange &&
+                if ((_blink==null || !_blink.CanBeCasted()) && q != null && q.CanBeCasted() && dist <= q.CastRange &&
                     (mod == null || remTime <= .7) &&
                     Utils.SleepCheck("Period_q"))
                 {
@@ -651,17 +773,18 @@ namespace MeepoAnnihilation
 
                 #region AutoAttack
 
-                if (Utils.SleepCheck("attack_rate" + handle))
+                if (!target.IsVisible)
                 {
-                    Utils.Sleep(250, "attack_rate" + handle);
-                    if (!target.IsVisible)
+                    if (Utils.SleepCheck("attack_rate" + handle))
                     {
+                        Utils.Sleep(250, "attack_rate" + handle);
                         meepo.Move(Prediction.InFront(target, 250));
                     }
-                    else
-                    {
-                        meepo.Attack(target);
-                    }
+                }
+                else
+                {
+                    var orb = OrbWalkManager(meepo);
+                    orb?.OrbwalkOn(target, followTarget: true);
                 }
 
                 #endregion
@@ -670,9 +793,9 @@ namespace MeepoAnnihilation
 
             #region Auto Meka
 
-            if (NeedUseMeka() && meka != null && meka.CanBeCasted() && Utils.SleepCheck("meka"))
+            if (NeedUseMeka() && _meka != null && _meka.CanBeCasted() && Utils.SleepCheck("meka"))
             {
-                meka.UseAbility();
+                _meka.UseAbility();
                 Utils.Sleep(250, "meka");
             }
 
@@ -698,7 +821,7 @@ namespace MeepoAnnihilation
 
             if (s == null)
             {
-                s = JungleCamps.GetCamps.OrderBy(x => x.CampPosition.Distance2D(me)).FirstOrDefault();
+                s = JungleCamps.GetCamps.OrderBy(x => x.StackPosition.Distance2D(me)).FirstOrDefault();
                 if (s != null)
                 {
                     name = MeepoSet.Find(x => Equals(x.Hero, me)).Handle.ToString();
@@ -743,7 +866,7 @@ namespace MeepoAnnihilation
 
             var mySet = MeepoSet.Find(x => Equals(x.Hero, me));
             var w = mySet.SpellW;
-            if (w != null && w.CanBeCasted())
+            if (w != null && Menu.Item("JungleFarm.AutoW").GetValue<bool>() && w.CanBeCasted())
             {
                 var enemy =
                     ObjectManager
@@ -813,19 +936,26 @@ namespace MeepoAnnihilation
                                 }
                             }
                             var anyAllyMeepoNearBase =
-                                MeepoList.Where(
+                                _meepoList.Where(
                                     x =>
-                                        !Equals(x, me) && x.Distance2D(Fountains.GetAllyFountain()) <= 5000 &&
-                                        !Heroes.GetByTeam(me.GetEnemyTeam()).Any(y => y.Distance2D(x) <= 1500))
+                                        !Equals(x, me) && x.Distance2D(Fountains.GetAllyFountain()) <= 5000 && x != me &&
+                                        !Heroes.GetByTeam(me.GetEnemyTeam()).Any(y => y.IsAlive && y.IsVisible && y.Distance2D(x) <= 1500))
                                     .OrderBy(z => z.Distance2D(Fountains.GetAllyFountain())).FirstOrDefault();
-                            var underTower = Towers.all.Where(x => x.Team == me.GetEnemyTeam())
+                            var underTower = Towers.All.Where(x => x.Team == me.GetEnemyTeam())
                                 .Any(x => x.Distance2D(me) <= 800);
-                            if (anyAllyMeepoNearBase!=null && w.CanBeCasted() && !underTower)
+                            if (anyAllyMeepoNearBase != null && w.CanBeCasted() && !underTower)
                             {
-                                if (Utils.SleepCheck("poofTimeToBase" + handle))
+                                var crossCheck = (me.Distance2D(Fountains.GetAllyFountain()) >=
+                                                   anyAllyMeepoNearBase.Distance2D(Fountains.GetAllyFountain()))
+                                                  && (me.Distance2D(anyAllyMeepoNearBase) >= 500);
+
+                                if (crossCheck)
                                 {
-                                    w.UseAbility(anyAllyMeepoNearBase.Position);
-                                    Utils.Sleep(250, "poofTimeToBase" + handle);
+                                    if (Utils.SleepCheck("poofTimeToBase" + handle))
+                                    {
+                                        w.UseAbility(anyAllyMeepoNearBase);
+                                        Utils.Sleep(2000, "poofTimeToBase" + handle);
+                                    }
                                 }
                             }
                             var channeledAbility = me.GetChanneledAbility();
@@ -839,7 +969,7 @@ namespace MeepoAnnihilation
                                 //do nothing while in tp
                             }
                             else if (!underTower && travelBoots != null && travelBoots.CanBeCasted() &&
-                                     me.Distance2D(Fountains.GetAllyFountain()) >= 2000 && Utils.SleepCheck("tp_cd" + handle))
+                                     me.Distance2D(Fountains.GetAllyFountain()) >= 5000 && Utils.SleepCheck("tp_cd" + handle) && Utils.SleepCheck("poofTimeToBase" + handle))
                             {
                                 Utils.Sleep(250, "tp_cd" + handle);
                                 travelBoots.UseAbility(Fountains.GetAllyFountain().Position);
@@ -871,7 +1001,6 @@ namespace MeepoAnnihilation
                 }
                 return NeedHeal[handle];
             }
-            return false;
         }
 
         private static void AutoPush(this Hero me)
@@ -881,7 +1010,7 @@ namespace MeepoAnnihilation
             var creepsEnemy = creeps.Where(x => x.Team != MyHero.Team).ToList();
             var creepsAlly = creeps.Where(x => x.Team == MyHero.Team).ToList();
             var enemyHeroes = Heroes.GetByTeam(MyHero.GetEnemyTeam()).Where(x=>x.IsAlive).ToList();
-            var towers = Towers.all.Where(x => x.Team != MyHero.Team).Where(x => x.IsAlive).ToList();
+            var towers = Towers.All.Where(x => x.Team != MyHero.Team).Where(x => x.IsAlive).ToList();
             var creepWithEnemy =
                 creepsAlly.FirstOrDefault(
                     x => x.MaximumHealth*65/100 < x.Health && creepsEnemy.Any(y => y.Distance2D(x) <= 1000));
@@ -1018,7 +1147,7 @@ namespace MeepoAnnihilation
                 NeedHeal[handle] = true;
             }
             if (s == null) return;
-            s.stacking = me;
+            s.Stacking = me;
             var set = MeepoSet.Find(x => Equals(x.Hero, me));
             var name = set.Handle.ToString();
             var sec = Game.GameTime%60;
@@ -1026,6 +1155,7 @@ namespace MeepoAnnihilation
             var time = s.StackTime - timeForStart - sec;
             //Print("Current Time: [" + sec + "] Time For Travel: [" + timeForStart + "] TimeForStartMoving: [" + (time - sec) + "]");
             //Print(time.ToString());
+            var min = Math.Floor(Game.GameTime/60)%2 == 0;
             if (time >= 0.5)
             {
                 if (Utils.SleepCheck("move_cd2" + name))
@@ -1034,7 +1164,7 @@ namespace MeepoAnnihilation
                     Utils.Sleep(250, "move_cd2" + name);
                 }
             }
-            else if (Utils.SleepCheck("move_cd" + name))
+            else if (Utils.SleepCheck("move_cd" + name) && min)
             {
                 var pos = s.CampPosition;
                 var ang = me.FindAngleBetween(pos, true);
@@ -1043,59 +1173,14 @@ namespace MeepoAnnihilation
                 me.Move(p);
                 me.Move(s.StackPosition, true);
                 Utils.Sleep((60 - s.StackTime)*1000 + 8000, "move_cd" + name);
+                Log.Debug($"Meepo #[{MeepoSet.Find(settings => settings.Hero.Equals(me))?.Id}] trying to stack camp #[{s.Id}] ({s.Name})");
+                // TODO: camp 4 & 3 
             }
         }
 
         #endregion
 
         #region OtherShit
-
-        private static Vector2 WorldToMinimap(Vector3 pos)
-        {
-            const float MapLeft = -8000;
-            const float MapTop = 7350;
-            const float MapRight = 7500;
-            const float MapBottom = -7200;
-            var MapWidth = Math.Abs(MapLeft - MapRight);
-            var MapHeight = Math.Abs(MapBottom - MapTop);
-
-            var _x = pos.X - MapLeft;
-            var _y = pos.Y - MapBottom;
-
-            float dx, dy, px, py;
-            if (Math.Round((float)Drawing.Width / Drawing.Height, 1) >= 1.7)
-            {
-                dx = 272f / 1920f * Drawing.Width;
-                dy = 261f / 1080f * Drawing.Height;
-                px = 11f / 1920f * Drawing.Width;
-                py = 11f / 1080f * Drawing.Height;
-            }
-            else if (Math.Round((float)Drawing.Width / Drawing.Height, 1) >= 1.5)
-            {
-                dx = 267f / 1680f * Drawing.Width;
-                dy = 252f / 1050f * Drawing.Height;
-                px = 10f / 1680f * Drawing.Width;
-                py = 11f / 1050f * Drawing.Height;
-            }
-            else
-            {
-                dx = 255f / 1280f * Drawing.Width;
-                dy = 229f / 1024f * Drawing.Height;
-                px = 6f / 1280f * Drawing.Width;
-                py = 9f / 1024f * Drawing.Height;
-            }
-            var MinimapMapScaleX = dx / MapWidth;
-            var MinimapMapScaleY = dy / MapHeight;
-
-            var scaledX = Math.Min(Math.Max(_x * MinimapMapScaleX, 0), dx);
-            var scaledY = Math.Min(Math.Max(_y * MinimapMapScaleY, 0), dy);
-
-            var screenX = px + scaledX;
-            var screenY = Drawing.Height - scaledY - py;
-
-            return new Vector2((float)Math.Floor(screenX), (float)Math.Floor(screenY));
-
-        }
 
         private static void DrawEffects(Meepo meepo, Hero target)
         {
@@ -1113,7 +1198,7 @@ namespace MeepoAnnihilation
 
         private static void FlushEffect()
         {
-            foreach (var meepo in MeepoList)
+            foreach (var meepo in _meepoList)
             {
                 ParticleEffect effect;
                 var handle = meepo.Handle;
@@ -1143,7 +1228,7 @@ namespace MeepoAnnihilation
 
         private static bool NeedUseMeka()
         {
-            return MeepoList.Where(x => x.IsAlive && x.Distance2D(MyHero) <= 900).Any(meepo => meepo.Health <= 500);
+            return _meepoList.Where(x => x.IsAlive && x.Distance2D(MyHero) <= 900).Any(meepo => meepo.Health <= 500);
         }
 
         private static readonly Dictionary<uint, bool> NeedHeal = new Dictionary<uint, bool>();
@@ -1188,29 +1273,29 @@ namespace MeepoAnnihilation
         {
             if (Utils.SleepCheck("SelectChecker"))
             {
-                SelectedMeepo = MyPlayer.Selection.Where(x => x.ClassID == ClassID.CDOTA_Unit_Hero_Meepo).ToList();
+                _selectedMeepo = MyPlayer.Selection.Where(x => x.ClassId == ClassId.CDOTA_Unit_Hero_Meepo).ToList();
                 //Print("selected count: " + SelectedMeepo.Count);
                 Utils.Sleep(150, "SelectChecker");
             }
             if (!Utils.SleepCheck("MeepoRefresh")) return;
             Utils.Sleep(500, "MeepoRefresh");
-            if (MeepoList.Count >= 1 + ultimate.Level + (MyHero.AghanimState() ? 1 : 0)) return;
-            MeepoList =
+            if (_meepoList.Count >= 1 + _ultimate.Level + (MyHero.AghanimState() ? 1 : 0)) return;
+            _meepoList =
                 ObjectManager.GetEntities<Meepo>()
-                    .Where(x => x.IsValid && !x.IsIllusion()&& x.Team == MyHero.Team) /*.OrderBy(x => x.Handle)*/
+                    .Where(x => x.IsValid && !x.IsIllusion() && x.Team == MyHero.Team) /*.OrderBy(x => x.Handle)*/
                     .ToList();
-            Print("meepo count is " + MeepoList.Count + " AGHANIM STATE: " + MyHero.AghanimState());
+            Print("meepo count is " + _meepoList.Count + " AGHANIM STATE: " + MyHero.AghanimState());
 
-            foreach (var meepo in MeepoList)
+            foreach (var meepo in _meepoList)
             {
                 var handle = meepo.Handle;
                 OrderState state;
-                OrderState Laststate;
+                OrderState laststate;
                 if (!OrderStates.TryGetValue(handle, out state))
                 {
                     OrderStates.Add(handle, OrderState.Idle);
                 }
-                if (!LastOrderStates.TryGetValue(handle, out Laststate))
+                if (!LastOrderStates.TryGetValue(handle, out laststate))
                 {
                     LastOrderStates.Add(handle, OrderState.Idle);
                 }
@@ -1220,7 +1305,7 @@ namespace MeepoAnnihilation
                 if (!SpellW.TryGetValue(handle, out w))
                     SpellW[handle] = meepo.Spellbook.Spell2;
             }
-            foreach (var meepo in MeepoList.Where(meepo => !MeepoSet.Any(x => Equals(x.Hero, meepo))))
+            foreach (var meepo in _meepoList.Where(meepo => !MeepoSet.Any(x => Equals(x.Hero, meepo))))
             {
                 MeepoSet.Add(new MeepoSettings(meepo));
             }
@@ -1231,7 +1316,7 @@ namespace MeepoAnnihilation
             if (!Utils.SleepCheck("Camp.Update"))
                 return;
             Utils.Sleep(150, "Camp.Update");
-            var curSec = (61 - Game.GameTime%60)*1000;
+            //var refreshTime = (Game.GameTime + 60)%120 == 0;
             foreach (var camp in JungleCamps.GetCamps)
             {
                 foreach (
@@ -1247,16 +1332,16 @@ namespace MeepoAnnihilation
                                     x.IsAlive && x.IsVisible && x.Team != MyHero.Team && x.Distance2D(meepo) <= 500 &&
                                     !x.IsWaitingToSpawn))
                 {
-                    camp.canBeHere = enemy;
-
-                    //Print("[CampStatus]: "+enemy);
-                    if (enemy || camp.delayed) continue;
-                    camp.delayed = true;
-                    DelayAction.Add(curSec, () =>
+                    camp.CanBeHere = enemy;
+                    
+                    if (enemy || camp.Delayed) continue;
+                    camp.Delayed = true;
+                    //Print("[CampStatus]: add delay" + (120 - (Game.GameTime + 60) % 120),true);
+                    DelayAction.Add((120 - (Game.GameTime + 60) % 120)*1000, () =>
                     {
-                        camp.delayed = false;
-                        camp.canBeHere = true;
-                        //Print("[CampStatus]: delayAction" + camp.CanBeHere);
+                        camp.Delayed = false;
+                        camp.CanBeHere = true;
+                        //Print("[CampStatus]: delayAction" + camp.CanBeHere,true);
                     });
                 }
             }
@@ -1274,10 +1359,15 @@ namespace MeepoAnnihilation
             return enemyHeroes.FirstOrDefault();
         }
 
-        private static void Print(string s,bool print=false)
+        private static void Print(string s,bool print=true)
         {
             if (print)
-                Game.PrintMessage(s, MessageType.ChatMessage);
+                Game.PrintMessage(s);
+        }
+
+        private static string PrintVector(this Vector3 s)
+        {
+            return $"({s.X}:{s.Y}:{s.Z})";
         }
 
         private static float GetRealCastRange(this Ability ability)
@@ -1367,6 +1457,35 @@ namespace MeepoAnnihilation
                 FontFlags.AntiAlias | FontFlags.Additive | FontFlags.Custom);
         }
 
+        private static readonly Dictionary<uint, Orbwalker> Orbwalkers = new Dictionary<uint, Orbwalker>();
+        private static Orbwalker OrbWalkManager(Hero me)
+        {
+            Orbwalker orb;
+            var handle = me.Handle;
+            if (Orbwalkers.TryGetValue(handle, out orb)) return orb;
+            orb = new Orbwalker(me);
+            Orbwalkers.Add(handle, orb);
+            return orb;
+        }
+
         #endregion
+    }
+    internal class Printer
+    {
+        private static readonly ILog Logger = AssemblyLogs.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        public static void Print(string s)
+        {
+            Game.PrintMessage(s);
+        }
+        public static void Log(object s)
+        {
+            Logger.Debug(s);
+        }
+        public static void Both(object s)
+        {
+            Logger.Debug(s);
+            Console.WriteLine(s);
+            Game.PrintMessage(s.ToString());
+        }
     }
 }

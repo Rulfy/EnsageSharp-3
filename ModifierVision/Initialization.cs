@@ -14,10 +14,19 @@ namespace ModifierVision
             var settings = new Menu("Settings", "Settings");
             settings.AddItem(new MenuItem("Enable.Heroes", "Enable for heroes").SetValue(true));
             settings.AddItem(new MenuItem("Enable.Creeps", "Enable for creeps").SetValue(false));
+            settings.AddItem(
+                new MenuItem("Enable.IconType", "Icon Type").SetValue(new StringList("round", "square")));
+            settings.AddItem(
+                new MenuItem("Enable.IconPosition", "Icon Orientation").SetValue(
+                    new StringList("vertically", "horizontally")));
+            settings.AddItem(new MenuItem("Enable.Color", "Change color on low values").SetValue(false));
+            settings.AddItem(new MenuItem("Enable.Stacks", "Draw stack count").SetValue(false));
+            /*settings.AddItem(
+                new MenuItem("abilityToggle.!", "modifiers").SetValue(new AbilityToggler(Members.ModiferDictinary)));*/
             settings.AddItem(new MenuItem("Counter.Hero", "Max modifiers for each Hero").SetValue(new Slider(4, 1, 5)));
             settings.AddItem(new MenuItem("Counter.Creep", "Max modifiers for each Creep").SetValue(new Slider(1, 1, 5)));
-            settings.AddItem(new MenuItem("Settings.IconSize", "Icon Size").SetValue(new Slider(25, 10, 100)));
-            settings.AddItem(new MenuItem("Settings.TextSize", "Text Size").SetValue(new Slider(65, 1, 100)));
+            settings.AddItem(new MenuItem("Settings.IconSize", "Icon Size").SetValue(new Slider(25, 10)));
+            settings.AddItem(new MenuItem("Settings.TextSize", "Text Size").SetValue(new Slider(65, 1)));
             settings.AddItem(new MenuItem("ExtraPos.X", "Extra Position X").SetValue(new Slider(0, -50, 50)));
             settings.AddItem(new MenuItem("ExtraPos.Y", "Extra Position Y").SetValue(new Slider(0, -50, 50)));
             var devolper = new Menu("Developer", "Developer");
@@ -35,13 +44,14 @@ namespace ModifierVision
                     "<font face='Comic Sans MS, cursive'><font color='#00aaff'>" + Members.Menu.DisplayName +
                     " By Jumpering" +
                     " loaded!</font> <font color='#aa0000'>v" + Assembly.GetExecutingAssembly().GetName().Version,
-                    true, MessageType.LogMessage);
+                    true);
                 Printer.PrintSuccess("> " + Members.Menu.DisplayName + " loaded v" +
                                      Assembly.GetExecutingAssembly().GetName().Version);
                 Members.System = new List<HeroModifier>();
                 Drawing.OnDraw += Action.OnDraw;
                 Unit.OnModifierAdded += Action.ModifierAdded;
                 Unit.OnModifierRemoved += Action.ModifierRemoved;
+
                 try
                 {
                     Members.Menu.AddToMainMenu();
@@ -53,7 +63,8 @@ namespace ModifierVision
             };
             Events.OnClose += (sender, args) =>
             {
-                Members.System.Clear();
+                if (Members.System != null)
+                    Members.System.Clear();
                 Drawing.OnDraw -= Action.OnDraw;
                 Unit.OnModifierAdded -= Action.ModifierAdded;
                 Unit.OnModifierRemoved -= Action.ModifierRemoved;
